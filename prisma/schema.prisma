@@ -1,0 +1,323 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  AGENT
+  USER
+}
+
+enum ListingStatus {
+  PENDING
+  APPROVED
+  SOLD
+}
+
+enum AgentApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TourRequestStatus {
+  REQUESTED
+  CONFIRMED
+  DECLINED
+}
+
+model User {
+  id                          String                     @id @default(cuid())
+  email                       String                     @unique
+  passwordHash                String
+  role                        UserRole                   @default(USER)
+  isVerified                  Boolean                    @default(false)
+  isActive                    Boolean                    @default(true)
+  deactivatedAt               DateTime?
+  createdAt                   DateTime                   @default(now())
+  updatedAt                   DateTime                   @updatedAt
+  listings                    PropertyListing[]          @relation("AgentListings")
+  buyerInquiries              Inquiry[]                  @relation("BuyerInquiries")
+  reviewsGiven                Review[]                   @relation("ReviewAuthor")
+  agentReviews                Review[]                   @relation("AgentReviewTarget")
+  favorites                   Favorite[]
+  notificationSubscriptions   NotificationSubscription[]
+  sentMessages                Message[]                  @relation("MessageSender")
+  receivedMessages            Message[]                  @relation("MessageRecipient")
+  buyerTourRequests           TourRequest[]              @relation("BuyerTourRequests")
+  agentApplications           AgentApplication[]
+  passwordResetTokens         PasswordResetToken[]
+  listingModerationActions    ListingModerationAction[]  @relation("ModerationActionBy")
+  agentReviewsOnListings      PropertyListingReview[]    @relation("ListingReviewAuthor")
+  createdNotificationEvents   NotificationEvent[]        @relation("NotificationEventCreator")
+
+  @@index([role])
+  @@index([isVerified])
+  @@index([isActive])
+}
+
+model PropertyListing {
+  id                    String                   @id @default(cuid())
+  price                 Decimal                  @db.Decimal(12, 2)
+  location              String
+  description           String
+  status                ListingStatus            @default(PENDING)
+  agentId               String
+  propertyTypeId        String?
+  geoCategoryId         String?
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+  agent                 User                     @relation("AgentListings", fields: [agentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  inquiries             Inquiry[]
+  media                 PropertyMedia[]
+  favorites             Favorite[]
+  listingReviews        PropertyListingReview[]
+  revisions             ListingRevision[]
+  moderationActions     ListingModerationAction[]
+  notificationEvents    NotificationEvent[]
+  notificationSubscriptions NotificationSubscription[]
+  tourRequests          TourRequest[]
+  propertyType          PropertyType?            @relation(fields: [propertyTypeId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  geoCategory           GeoCategory?             @relation(fields: [geoCategoryId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  messageThreads        MessageThread[]
+
+  @@index([agentId])
+  @@index([status])
+  @@index([location])
+  @@index([status, location])
+  @@index([propertyTypeId])
+  @@index([geoCategoryId])
+  @@index([status, price])
+}
+
+model Inquiry {
+  id            String          @id @default(cuid())
+  message       String
+  createdAt     DateTime        @default(now())
+  buyerId       String
+  listingId     String
+  buyer         User            @relation("BuyerInquiries", fields: [buyerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  listing       PropertyListing @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  messageThread MessageThread?
+
+  @@index([buyerId])
+  @@index([listingId])
+  @@index([createdAt])
+  @@index([listingId, createdAt])
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  rating     Int      @db.SmallInt
+  reviewerId String
+  agentId    String
+  createdAt  DateTime @default(now())
+  reviewer   User     @relation("ReviewAuthor", fields: [reviewerId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  agent      User     @relation("AgentReviewTarget", fields: [agentId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([reviewerId, agentId])
+  @@index([agentId])
+  @@index([reviewerId])
+}
+
+model AgentApplication {
+  id             String                 @id @default(cuid())
+  applicantId    String
+  status         AgentApplicationStatus @default(PENDING)
+  notes          String?
+  reviewedById   String?
+  reviewedAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  applicant      User                   @relation(fields: [applicantId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  licenseDocs    LicenseDocument[]
+
+  @@index([applicantId])
+  @@index([status])
+}
+
+model LicenseDocument {
+  id                String            @id @default(cuid())
+  applicationId     String
+  fileUrl           String
+  mimeType          String
+  uploadedAt        DateTime          @default(now())
+  application       AgentApplication  @relation(fields: [applicationId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([applicationId])
+}
+
+model PropertyMedia {
+  id                String          @id @default(cuid())
+  listingId         String
+  mediaUrl          String
+  mediaType         String
+  sortOrder         Int             @default(0)
+  createdAt         DateTime        @default(now())
+  listing           PropertyListing @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([listingId])
+}
+
+model PropertyType {
+  id                String            @id @default(cuid())
+  name              String            @unique
+  createdAt         DateTime          @default(now())
+  listings          PropertyListing[]
+}
+
+model GeoCategory {
+  id                String            @id @default(cuid())
+  name              String            @unique
+  createdAt         DateTime          @default(now())
+  listings          PropertyListing[]
+}
+
+model Favorite {
+  id                String          @id @default(cuid())
+  userId            String
+  listingId         String
+  createdAt         DateTime        @default(now())
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  listing           PropertyListing @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([userId, listingId])
+  @@index([listingId])
+}
+
+model NotificationSubscription {
+  id                String          @id @default(cuid())
+  userId            String
+  listingId         String
+  onPriceDrop       Boolean         @default(true)
+  onStatusChange    Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  listing           PropertyListing @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([userId, listingId])
+  @@index([listingId])
+}
+
+model NotificationEvent {
+  id                String          @id @default(cuid())
+  listingId         String
+  createdById       String?
+  eventType         String
+  payload           Json
+  createdAt         DateTime        @default(now())
+  listing           PropertyListing @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  createdBy         User?           @relation("NotificationEventCreator", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([listingId, createdAt])
+}
+
+model MessageThread {
+  id                String          @id @default(cuid())
+  listingId         String
+  inquiryId         String?         @unique
+  createdAt         DateTime        @default(now())
+  listing           PropertyListing @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  inquiry           Inquiry?        @relation(fields: [inquiryId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  messages          Message[]
+}
+
+model Message {
+  id                String          @id @default(cuid())
+  threadId          String
+  senderId          String
+  recipientId       String
+  content           String
+  createdAt         DateTime        @default(now())
+  thread            MessageThread   @relation(fields: [threadId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  sender            User            @relation("MessageSender", fields: [senderId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  recipient         User            @relation("MessageRecipient", fields: [recipientId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([threadId, createdAt])
+  @@index([recipientId, createdAt])
+}
+
+model TourRequest {
+  id                String            @id @default(cuid())
+  listingId         String
+  buyerId           String
+  preferredTime     DateTime
+  status            TourRequestStatus @default(REQUESTED)
+  createdAt         DateTime          @default(now())
+  listing           PropertyListing   @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  buyer             User              @relation("BuyerTourRequests", fields: [buyerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([listingId, status])
+  @@index([buyerId])
+}
+
+model CmsBanner {
+  id                String    @id @default(cuid())
+  title             String
+  imageUrl          String
+  ctaText           String?
+  ctaUrl            String?
+  isActive          Boolean   @default(true)
+  sortOrder         Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([isActive, sortOrder])
+}
+
+model PasswordResetToken {
+  id                String    @id @default(cuid())
+  userId            String
+  tokenHash         String
+  expiresAt         DateTime
+  usedAt            DateTime?
+  createdAt         DateTime  @default(now())
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model ListingRevision {
+  id                String          @id @default(cuid())
+  listingId         String
+  changedById       String
+  changedFields     Json
+  triggersReview    Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  listing           PropertyListing @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([listingId, createdAt])
+}
+
+model ListingModerationAction {
+  id                String          @id @default(cuid())
+  listingId         String
+  actedById         String
+  action            String
+  notes             String?
+  createdAt         DateTime        @default(now())
+  listing           PropertyListing @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  actedBy           User            @relation("ModerationActionBy", fields: [actedById], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([listingId, createdAt])
+  @@index([actedById])
+}
+
+model PropertyListingReview {
+  id                String          @id @default(cuid())
+  listingId         String
+  reviewerId        String
+  rating            Int             @db.SmallInt
+  comment           String?
+  createdAt         DateTime        @default(now())
+  listing           PropertyListing @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  reviewer          User            @relation("ListingReviewAuthor", fields: [reviewerId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([listingId, reviewerId])
+  @@index([listingId, createdAt])
+}

@@ -1,0 +1,152 @@
+openapi: 3.0.3
+info:
+  title: Moderated Real Estate Marketplace API
+  version: 1.0.0
+servers:
+  - url: http://localhost:4000
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+paths:
+  /health:
+    get:
+      summary: Health status
+  /auth/register:
+    post:
+      summary: Register USER or AGENT account
+  /auth/login:
+    post:
+      summary: Login with email and password
+  /auth/sso/google:
+    post:
+      summary: Login with Google SSO token
+  /auth/sso/apple:
+    post:
+      summary: Login with Apple SSO token
+  /auth/refresh:
+    post:
+      summary: Refresh JWT access token
+  /listings:
+    get:
+      summary: Public approved listings with filters
+  /admin/agents/pending:
+    get:
+      summary: List pending agent applications
+      security:
+        - bearerAuth: []
+  /admin/users:
+    get:
+      summary: List users for admin lifecycle management
+      security:
+        - bearerAuth: []
+  /admin/listings/pending:
+    get:
+      summary: List pending listings for moderation
+      security:
+        - bearerAuth: []
+  /admin/analytics/overview:
+    get:
+      summary: Admin dashboard analytics
+      security:
+        - bearerAuth: []
+  /admin/agent-applications/pending:
+    get:
+      summary: List pending agent applications with license documents
+      security:
+        - bearerAuth: []
+  /admin/listings/{id}/approve:
+    patch:
+      summary: Approve listing with moderation notes
+      security:
+        - bearerAuth: []
+  /admin/listings/{id}/reject:
+    patch:
+      summary: Reject listing and return to pending review
+      security:
+        - bearerAuth: []
+  /admin/listings/{id}/moderation-history:
+    get:
+      summary: Retrieve listing moderation action history
+      security:
+        - bearerAuth: []
+  /agents/me/listings:
+    get:
+      summary: List authenticated agent listings
+      security:
+        - bearerAuth: []
+    post:
+      summary: Create a listing that enters pending review
+      security:
+        - bearerAuth: []
+  /agents/verification-status:
+    get:
+      summary: Fetch current agent verification state
+      security:
+        - bearerAuth: []
+  /agents/me/application:
+    post:
+      summary: Submit agent license application documents
+      security:
+        - bearerAuth: []
+  /agents/inquiries:
+    get:
+      summary: List inquiries for authenticated agent listings
+      security:
+        - bearerAuth: []
+  /agents/inquiries/{id}/respond:
+    post:
+      summary: Send threaded response to inquiry
+      security:
+        - bearerAuth: []
+  /users/listings:
+    get:
+      summary: Query approved listings with filters
+      security:
+        - bearerAuth: []
+  /users/me/favorites:
+    get:
+      summary: Retrieve current user's saved listings
+      security:
+        - bearerAuth: []
+  /users/listings/{listingId}/inquiries:
+    post:
+      summary: Send message to listing agent
+      security:
+        - bearerAuth: []
+  /users/listings/{listingId}/tour-requests:
+    post:
+      summary: Request property showing time
+      security:
+        - bearerAuth: []
+  /users/listings/{listingId}/reviews:
+    post:
+      summary: Leave or update verified listing review
+      security:
+        - bearerAuth: []
+  /users/me/notifications/{listingId}/preferences:
+    post:
+      summary: Upsert notification preferences for saved listing
+      security:
+        - bearerAuth: []
+  /users/me/notifications/events:
+    get:
+      summary: List notification events for user's subscriptions
+      security:
+        - bearerAuth: []
+  /users/me/messages/threads:
+    get:
+      summary: List user's message threads
+      security:
+        - bearerAuth: []
+  /users/me/messages/threads/{threadId}:
+    get:
+      summary: Get messages in a specific thread
+      security:
+        - bearerAuth: []
+    post:
+      summary: Send a message in a specific thread
+      security:
+        - bearerAuth: []
