@@ -8,6 +8,9 @@ export interface PropertyListingRecord {
   agentId: string;
   price: number;
   location: string;
+  zipCode: string | null;
+  lat: number | null;
+  lng: number | null;
   propertyType: string | null;
   description: string;
   status: ListingStatus;
@@ -30,6 +33,9 @@ const toRecord = (listing: {
   agentId: string;
   price: unknown;
   location: string;
+  zipCode: string | null;
+  lat: number | null;
+  lng: number | null;
   description: string;
   status: string;
   createdAt: Date;
@@ -41,6 +47,9 @@ const toRecord = (listing: {
   agentId: listing.agentId,
   price: Number(listing.price),
   location: listing.location,
+  zipCode: listing.zipCode,
+  lat: listing.lat,
+  lng: listing.lng,
   propertyType: listing.propertyType?.name ?? null,
   description: listing.description,
   status: listing.status as ListingStatus,
@@ -54,6 +63,9 @@ export const listingStore = {
     agentId: string;
     price: number;
     location: string;
+    zipCode?: string;
+    lat?: number;
+    lng?: number;
     propertyType?: string;
     description: string;
     status?: ListingStatus;
@@ -73,19 +85,22 @@ export const listingStore = {
         agentId: input.agentId,
         price: input.price,
         location: input.location,
+        zipCode: input.zipCode,
+        lat: input.lat,
+        lng: input.lng,
         description: input.description,
         status: input.status ?? "PENDING",
         propertyTypeId,
         media: input.mediaUrls?.length
           ? {
-              createMany: {
-                data: input.mediaUrls.map((mediaUrl, index) => ({
-                  mediaUrl,
-                  mediaType: "IMAGE",
-                  sortOrder: index,
-                })),
-              },
-            }
+            createMany: {
+              data: input.mediaUrls.map((mediaUrl, index) => ({
+                mediaUrl,
+                mediaType: "IMAGE",
+                sortOrder: index,
+              })),
+            },
+          }
           : undefined,
       },
       include: { propertyType: true, media: true },
@@ -98,6 +113,9 @@ export const listingStore = {
     input: {
       price?: number;
       location?: string;
+      zipCode?: string;
+      lat?: number;
+      lng?: number;
       propertyType?: string;
       description?: string;
       status?: ListingStatus;
@@ -127,19 +145,22 @@ export const listingStore = {
       data: {
         price: input.price,
         location: input.location,
+        zipCode: input.zipCode,
+        lat: input.lat,
+        lng: input.lng,
         description: input.description,
         status: input.status,
         propertyTypeId,
         media: input.mediaUrls
           ? {
-              createMany: {
-                data: input.mediaUrls.map((mediaUrl, index) => ({
-                  mediaUrl,
-                  mediaType: "IMAGE",
-                  sortOrder: index,
-                })),
-              },
-            }
+            createMany: {
+              data: input.mediaUrls.map((mediaUrl, index) => ({
+                mediaUrl,
+                mediaType: "IMAGE",
+                sortOrder: index,
+              })),
+            },
+          }
           : undefined,
       },
       include: { propertyType: true, media: true },
@@ -178,8 +199,8 @@ export const listingStore = {
         },
         propertyType: filters?.propertyType
           ? {
-              name: { equals: filters.propertyType, mode: "insensitive" },
-            }
+            name: { equals: filters.propertyType, mode: "insensitive" },
+          }
           : undefined,
       },
       include: { propertyType: true, media: true },

@@ -29,6 +29,8 @@ const toQueryString = (query: ListingQuery): string => {
 export const createListingsApi = (client: ApiClient) => ({
   getPublicListings: (query: ListingQuery): Promise<PagedListingsResponse> =>
     client.request<PagedListingsResponse>("GET", `/listings${toQueryString(query)}`),
+  getPublicListing: (id: string): Promise<ListingSummary> =>
+    client.request<ListingSummary>("GET", `/listings/${id}`),
   getUserListings: (query: ListingQuery): Promise<{ items: ListingSummary[] }> =>
     client.request<{ items: ListingSummary[] }>("GET", `/users/listings${toQueryString(query)}`),
 });

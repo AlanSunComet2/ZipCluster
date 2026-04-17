@@ -24,5 +24,14 @@ export const createPublicListingRouter = (): Router => {
     });
   });
 
+  router.get("/:id", async (req, res) => {
+    const listing = await listingStore.findById(req.params.id);
+    if (!listing || listing.status !== "APPROVED") {
+      res.status(404).json({ error: "Listing not found" });
+      return;
+    }
+    res.status(200).json(listing);
+  });
+
   return router;
 };

@@ -5,13 +5,23 @@ import { AgentDashboardPage } from "./pages/agent/AgentDashboardPage";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { RegisterPage } from "./pages/auth/RegisterPage";
 import { UserDiscoveryPage } from "./pages/user/UserDiscoveryPage";
+import { PropertyDetailsPage } from "./pages/user/PropertyDetailsPage";
+import { SavedPropertiesPage } from "./pages/user/SavedPropertiesPage";
 
 export const router = createBrowserRouter([
   {
     path: "/",
+    element: <UserDiscoveryPage />,
+  },
+  {
+    path: "/property/:id",
+    element: <PropertyDetailsPage />,
+  },
+  {
+    path: "/saved",
     element: (
-      <ProtectedRoute>
-        <UserDiscoveryPage />
+      <ProtectedRoute allowedRoles={["USER", "AGENT", "ADMIN"]}>
+        <SavedPropertiesPage />
       </ProtectedRoute>
     ),
   },

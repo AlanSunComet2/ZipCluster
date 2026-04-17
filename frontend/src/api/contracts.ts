@@ -35,6 +35,9 @@ export interface ListingSummary {
   id: string;
   price: number;
   location: string;
+  zipCode: string | null;
+  lat: number | null;
+  lng: number | null;
   propertyType: string | null;
   status: "PENDING" | "APPROVED" | "SOLD";
   description?: string;
