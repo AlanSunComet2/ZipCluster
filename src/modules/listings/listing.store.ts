@@ -219,7 +219,7 @@ export const listingStore = {
       data: {
         listingId: input.listingId,
         changedById: input.changedById,
-        changedFields: input.changedFields as Prisma.InputJsonValue,
+        changedFields: input.changedFields as unknown,
         triggersReview: input.triggersReview,
       },
     });
@@ -254,7 +254,7 @@ export const listingStore = {
       where: { listingId },
       orderBy: { createdAt: "desc" },
     });
-    return records.map((record) => ({
+    return records.map((record: { id: string; listingId: string; actedById: string; action: string; notes: string | null; createdAt: Date }) => ({
       id: record.id,
       listingId: record.listingId,
       actedById: record.actedById,

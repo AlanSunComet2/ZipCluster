@@ -112,7 +112,7 @@ export const engagementStore = {
     if (!listing) {
       throw new Error("Listing not found.");
     }
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: typeof prisma) => {
       const inquiry = await tx.inquiry.create({ data: input });
       const thread = await tx.messageThread.create({
         data: { listingId: input.listingId, inquiryId: inquiry.id },
@@ -143,7 +143,7 @@ export const engagementStore = {
       include: { messageThread: true },
       orderBy: { createdAt: "desc" },
     });
-    return inquiries.map((inquiry) => ({
+    return inquiries.map((inquiry: { id: string; listingId: string; buyerId: string; message: string; messageThread: { id: string } | null; createdAt: Date }) => ({
       id: inquiry.id,
       listingId: inquiry.listingId,
       buyerId: inquiry.buyerId,
@@ -323,7 +323,7 @@ export const engagementStore = {
         listingId: input.listingId,
         createdById: input.createdById,
         eventType: input.eventType,
-        payload: input.payload as Prisma.InputJsonValue,
+        payload: input.payload as unknown,
       },
     });
     return {
@@ -341,7 +341,7 @@ export const engagementStore = {
       where: { userId, OR: [{ onPriceDrop: true }, { onStatusChange: true }] },
       select: { listingId: true },
     });
-    const listingIds = subscriptions.map((item) => item.listingId);
+    const listingIds = subscriptions.map((item: { listingId: string }) => item.listingId);
     if (!listingIds.length) {
       return [];
     }
@@ -350,7 +350,7 @@ export const engagementStore = {
       orderBy: { createdAt: "desc" },
       take: 100,
     });
-    return events.map((event) => ({
+    return events.map((event: { id: string; listingId: string; createdById: string | null; eventType: string; payload: unknown; createdAt: Date }) => ({
       id: event.id,
       listingId: event.listingId,
       createdById: event.createdById,
@@ -370,10 +370,10 @@ export const engagementStore = {
       return [];
     }
     const threads = await prisma.messageThread.findMany({
-      where: { id: { in: messages.map((item) => item.threadId) } },
+      where: { id: { in: messages.map((item: { threadId: string }) => item.threadId) } },
       orderBy: { createdAt: "desc" },
     });
-    return threads.map((thread) => ({
+    return threads.map((thread: { id: string; listingId: string; inquiryId: string | null; createdAt: Date }) => ({
       id: thread.id,
       listingId: thread.listingId,
       inquiryId: thread.inquiryId,
@@ -389,7 +389,7 @@ export const engagementStore = {
       },
       orderBy: { createdAt: "asc" },
     });
-    return messages.map((message) => ({
+    return messages.map((message: { id: string; threadId: string; senderId: string; recipientId: string; content: string; createdAt: Date }) => ({
       id: message.id,
       threadId: message.threadId,
       senderId: message.senderId,
