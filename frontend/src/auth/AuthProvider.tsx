@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useCallback, useMemo, useState } from "react";
 import { createAuthApi } from "../api/auth";
 import { ApiClient } from "../api/client";
 import type { AuthResponse, LoginInput, RegisterInput, UserRole } from "../api/contracts";
@@ -58,43 +58,38 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }): JSX.E
   );
   const authApi = useMemo(() => createAuthApi(authClient), [authClient]);
 
-  const save = (next: SessionState | null): void => {
+  const save = useCallback((next: SessionState | null): void => {
     setSession(next);
     writeSession(next);
-  };
+  }, []);
 
-  const login = async (payload: LoginInput): Promise<void> => {
+  const login = useCallback(async (payload: LoginInput): Promise<void> => {
     const response = await authApi.login(payload);
     save(toSession(response));
-  };
+  }, [authApi]);
 
-  const register = async (payload: RegisterInput): Promise<void> => {
+  const register = useCallback(async (payload: RegisterInput): Promise<void> => {
     const response = await authApi.register(payload);
     save(toSession(response));
-  };
+  }, [authApi]);
 
-  const logout = (): void => {
+  const logout = useCallback((): void => {
     save(null);
-  };
+  }, []); // save is stable (defined outside component or also memoized)
 
-  const refreshSession = async (): Promise<void> => {
+  const refreshSession = useCallback(async (): Promise<void> => {
     if (!session?.refreshToken) {
       logout();
       return;
     }
     const refreshed = await authApi.refresh({ refreshToken: session.refreshToken });
     save({ ...session, accessToken: refreshed.accessToken, refreshToken: refreshed.refreshToken });
-  };
+  }, [session, authApi, logout]);
 
+  // Fixed the useMemo deps to include ALL functions
   const value = useMemo<AuthContextValue>(
-    () => ({
-      session,
-      login,
-      register,
-      refreshSession,
-      logout,
-    }),
-    [session, login, register],
+    () => ({ session, login, register, refreshSession, logout }),
+    [session, login, register, refreshSession, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

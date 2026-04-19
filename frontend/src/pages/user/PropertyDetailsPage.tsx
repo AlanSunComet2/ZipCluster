@@ -4,23 +4,22 @@ import type { ListingSummary } from "../../api/contracts";
 import { createEngagementApi } from "../../api/engagement";
 import { createListingsApi } from "../../api/listings";
 import { useAuth } from "../../auth/AuthProvider";
-import { ApiClient } from "../../api/client";
-import { env } from "../../config/env";
+import { useApiClient } from "../../auth/useApiClient";
 import { Navbar } from "../../components/layout/Navbar";
 import { Footer } from "../../components/layout/Footer";
 
 export const PropertyDetailsPage = (): JSX.Element => {
   const { id } = useParams<{ id: string }>();
   const { session } = useAuth();
-  
-  const authClient = useMemo(() => new ApiClient({ baseUrl: env.apiBaseUrl }), []);
+
+  const authClient = useApiClient();  
   const listingsApi = useMemo(() => createListingsApi(authClient), [authClient]);
   const engagementApi = useMemo(() => createEngagementApi(authClient), [authClient]);
 
   const [listing, setListing] = useState<ListingSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [inquiryMsg, setInquiryMsg] = useState("");
-  const [statusMsg, setStatusMsg] = useState("");
+  const [status, setStatus] = useState<{ msg: string; isError: boolean } | null>(null);
   const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
@@ -29,11 +28,11 @@ export const PropertyDetailsPage = (): JSX.Element => {
       .then(setListing)
       .catch(() => setListing(null))
       .finally(() => setLoading(false));
-      
+
     if (session) {
-       engagementApi.listFavorites().then(res => {
-         setIsSaved(res.items.some(f => f.listingId === id));
-       }).catch(() => {});
+      engagementApi.listFavorites().then(res => {
+        setIsSaved(res.items.some(f => f.listingId === id));
+      }).catch(() => { });
     }
   }, [id, session, listingsApi, engagementApi]);
 
@@ -48,7 +47,7 @@ export const PropertyDetailsPage = (): JSX.Element => {
         await engagementApi.addFavorite(id);
         setIsSaved(true);
       }
-    } catch {}
+    } catch { }
   };
 
   const handleInquiry = async () => {
@@ -56,10 +55,10 @@ export const PropertyDetailsPage = (): JSX.Element => {
     if (!id || !inquiryMsg.trim()) return;
     try {
       await engagementApi.createInquiry(id, inquiryMsg);
-      setStatusMsg("Message sent to agent!");
+      setStatus({ msg: "Message sent to agent!", isError: false });
       setInquiryMsg("");
     } catch {
-      setStatusMsg("Failed to send message");
+      setStatus({ msg: "Failed to send message", isError: true });
     }
   };
 
@@ -68,9 +67,9 @@ export const PropertyDetailsPage = (): JSX.Element => {
     if (!id) return;
     try {
       await engagementApi.createTourRequest(id, new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString());
-      setStatusMsg("Tour Request sent!");
+      setStatus({ msg: "Tour Request sent!", isError: false });
     } catch {
-      setStatusMsg("Failed to schedule tour");
+      setStatus({ msg: "Failed to schedule tour", isError: true });
     }
   };
 
@@ -82,14 +81,14 @@ export const PropertyDetailsPage = (): JSX.Element => {
     "https://images.unsplash.com/photo-1600607687931-cecebd808cbd?ixlib=rb-4.0.3&auto=format&fit=crop&w=400",
     "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?ixlib=rb-4.0.3&auto=format&fit=crop&w=400"
   ];
-  
+
   const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
   return (
     <>
       <Navbar />
       <main className="container mb-5 mt-4">
-        
+
         {/* Header Area */}
         <div className="d-flex justify-content-between align-items-center mb-4 text-center text-md-start" style={{ flexWrap: 'wrap' }}>
           <div>
@@ -100,7 +99,7 @@ export const PropertyDetailsPage = (): JSX.Element => {
           <div style={{ textAlign: 'right' }}>
             <h2 style={{ color: 'var(--primary-color)', fontWeight: 800, fontSize: '2.5rem', margin: 0 }}>{formatter.format(listing.price)}</h2>
             <button onClick={toggleSave} className={`btn ${isSaved ? 'btn-primary' : 'btn-outline'} mt-2`}>
-              <i className={isSaved ? "bi bi-heart-fill me-2" : "bi bi-heart me-2"}></i> 
+              <i className={isSaved ? "bi bi-heart-fill me-2" : "bi bi-heart me-2"}></i>
               {isSaved ? "Saved" : "Save Property"}
             </button>
           </div>
@@ -123,30 +122,34 @@ export const PropertyDetailsPage = (): JSX.Element => {
 
         {/* Content Row */}
         <div className="row" style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem' }}>
-          
+
           <div style={{ flex: 2, minWidth: '300px' }}>
             <div className="card" style={{ padding: '2rem', marginBottom: '2rem' }}>
-               <h3 style={{ borderBottom: '1px solid rgba(0,0,0,0.1)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>About This Home</h3>
-               <p style={{ fontSize: '1.1rem', lineHeight: '1.8', whiteSpace: 'pre-wrap' }}>
-                 {listing.description || "No description provided for this luxury property. Schedule a tour to discover its features in person."}
-               </p>
+              <h3 style={{ borderBottom: '1px solid rgba(0,0,0,0.1)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>About This Home</h3>
+              <p style={{ fontSize: '1.1rem', lineHeight: '1.8', whiteSpace: 'pre-wrap' }}>
+                {listing.description || "No description provided for this luxury property. Schedule a tour to discover its features in person."}
+              </p>
             </div>
           </div>
 
           <div style={{ flex: 1, minWidth: '300px' }}>
-             {/* Contact Agent Form */}
-             <div className="card shadow-lg" style={{ padding: '2rem', position: 'sticky', top: '100px' }}>
-                <h4 style={{ fontWeight: 800 }}>Contact Agent</h4>
-                
-                {statusMsg && <div className="badge badge-success mb-3 w-100">{statusMsg}</div>}
-                
-                <div className="form-group mb-3">
-                   <textarea className="form-control" rows={4} placeholder="I am interested in this property..." value={inquiryMsg} onChange={e => setInquiryMsg(e.target.value)}></textarea>
+            {/* Contact Agent Form */}
+            <div className="card shadow-lg" style={{ padding: '2rem', position: 'sticky', top: '100px' }}>
+              <h4 style={{ fontWeight: 800 }}>Contact Agent</h4>
+
+              {status && (
+                <div className={`badge mb-3 w-100 ${status.isError ? "badge-danger" : "badge-success"}`}>
+                  {status.msg}
                 </div>
-                
-                <button className="btn btn-primary w-100 mb-3" onClick={handleInquiry}>Request Info</button>
-                <button className="btn btn-outline w-100" onClick={handleTour}>Schedule a Tour</button>
-             </div>
+              )}
+
+              <div className="form-group mb-3">
+                <textarea className="form-control" rows={4} placeholder="I am interested in this property..." value={inquiryMsg} onChange={e => setInquiryMsg(e.target.value)}></textarea>
+              </div>
+
+              <button className="btn btn-primary w-100 mb-3" onClick={handleInquiry}>Request Info</button>
+              <button className="btn btn-outline w-100" onClick={handleTour}>Schedule a Tour</button>
+            </div>
           </div>
         </div>
 
