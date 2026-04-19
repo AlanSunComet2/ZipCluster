@@ -43,7 +43,7 @@ export const RegisterPage = (): JSX.Element => {
               <Link to="/register" className="btn btn-primary" style={{ padding: '0.4rem 2rem', borderRadius: '5px' }}>Register</Link>
             </div>
 
-            {error && <div className="badge badge-danger mb-4 w-100" style={{ padding: '1rem', borderRadius: '8px', textAlign: 'left', whiteSpace: 'normal' }}>{error}</div>}
+            {error && <div className="badge badge-danger mb-4 w-100" style={{ padding: '1rem', borderRadius: '8px', textAlign: 'left', whiteSpace: 'normal' }}>An account already exists with this email</div>}
 
             <form onSubmit={submit}>
               <div className="form-group mb-3">
@@ -65,6 +65,7 @@ export const RegisterPage = (): JSX.Element => {
                   className="form-control" 
                   placeholder="••••••••" 
                   required 
+                  minLength={8}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />

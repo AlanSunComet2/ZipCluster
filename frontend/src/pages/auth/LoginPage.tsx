@@ -42,7 +42,7 @@ export const LoginPage = (): JSX.Element => {
               <Link to="/register" className="btn btn-outline" style={{ padding: '0.4rem 2rem', borderRadius: '5px', border: 'none', color: 'var(--text-light)' }}>Register</Link>
             </div>
 
-            {error && <div className="badge badge-danger mb-4 w-100" style={{ padding: '1rem', borderRadius: '8px', textAlign: 'left', whiteSpace: 'normal' }}>{error}</div>}
+            {error && <div className="badge badge-danger mb-4 w-100" style={{ padding: '1rem', borderRadius: '8px', textAlign: 'left', whiteSpace: 'normal' }}>Incorrect username or password</div>}
 
             <form onSubmit={submit}>
               <div className="form-group mb-3">
@@ -67,6 +67,7 @@ export const LoginPage = (): JSX.Element => {
                   className="form-control" 
                   placeholder="••••••••" 
                   required 
+                  minLength={8}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
