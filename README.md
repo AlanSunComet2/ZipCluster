@@ -13,11 +13,13 @@ TypeScript-only moderated marketplace with three roles:
 
 ## Run Locally
 1. Copy `.env.example` to `.env` and set secrets.
-2. Install dependencies: `npm install`
-3. Validate Prisma schema: `npm run prisma:validate`
+2. Start the database: `docker compose up -d db`
+3. Install dependencies: `npm install`
 4. Generate Prisma client: `npm run prisma:generate`
-5. Start API: `npm run dev`
-6. In a second terminal: `cd frontend && npm install && npm run dev`
+5. Apply schema to database: `npx prisma db push`
+6. Seed demo users: `npm run prisma:seed`
+7. Start API: `npm run dev`
+8. In a second terminal: `cd frontend && npm install && npm run dev`
 
 ### Required backend environment variables
 - `DATABASE_URL`: PostgreSQL connection string.
@@ -37,7 +39,15 @@ TypeScript-only moderated marketplace with three roles:
 - Prisma schema: `prisma/schema.prisma`
 - Validate schema: `npm run prisma:validate`
 - Generate Prisma client: `npm run prisma:generate`
-- Create migration SQL from schema: `npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > prisma/migrations/<timestamp>_init/migration.sql`
+- Apply schema to database: `npx prisma db push`
+- Generate migration SQL from schema:
+  ```bash
+  npx prisma migrate diff \
+    --from-empty \
+    --to-schema-datamodel prisma/schema.prisma \
+    --script \
+    > prisma/migrations/$(date +%Y%m%d%H%M%S)_init/migration.sql
+  ```
 - Seed demo users: `npm run prisma:seed`
 
 ## API Documentation
