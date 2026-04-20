@@ -124,6 +124,8 @@ export const AgentDashboardPage = (): JSX.Element => {
     { key: "profile", label: "Verification", icon: "bi-person-badge" },
   ];
 
+  const status = verification?.status?.toUpperCase();
+
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       <Navbar />
@@ -364,8 +366,11 @@ export const AgentDashboardPage = (): JSX.Element => {
                   <h4 style={{ fontWeight: 800, marginBottom: "1.5rem" }}>Current Status</h4>
                   <div style={{ background: "var(--bg-primary)", borderRadius: "8px", padding: "1.5rem", marginBottom: "1rem" }}>
                     <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "var(--text-light)", marginBottom: "0.5rem" }}>Agent Role</div>
-                    <span className={`badge ${verification?.status === "VERIFIED" ? "badge-success" : "badge-warning"}`} style={{ fontSize: "1rem" }}>
-                      {verification?.status || "UNVERIFIED"}
+                    <span className={`badge ${status === "APPROVED" || status === "VERIFIED"
+                        ? "badge-success"
+                        : "badge-warning"
+                      }`}>
+                      {verification?.status || "PENDING"}
                     </span>
                   </div>
                   <div style={{ background: "var(--bg-primary)", borderRadius: "8px", padding: "1.5rem" }}>
