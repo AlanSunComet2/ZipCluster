@@ -74,6 +74,12 @@ export const AgentDashboardPage = (): JSX.Element => {
     void loadAll();
   };
 
+  const markUnsold = async (listing: ListingSummary) => {
+    await agentApi.updateListing(listing.id, { status: "PENDING" });
+    flash("✓ Listing marked as unsold.");
+    void loadAll();
+  };
+
   const deleteListing = async (id: string) => {
     if (!confirm("Delete this listing?")) return;
     await agentApi.deleteListing(id);
@@ -125,6 +131,16 @@ export const AgentDashboardPage = (): JSX.Element => {
   ];
 
   const status = verification?.status?.toUpperCase();
+
+  const toggleSold = (listing: ListingSummary) => {
+    if (listing.status === "PENDING") return;
+
+    if (listing.status === "SOLD") {
+      markUnsold(listing);
+    } else {
+      markSold(listing);
+    }
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
@@ -262,8 +278,34 @@ export const AgentDashboardPage = (): JSX.Element => {
                           <span className={`badge ${listing.status === "APPROVED" ? "badge-success" : listing.status === "PENDING" ? "badge-warning" : "badge-danger"}`}>{listing.status}</span>
                         </td>
                         <td style={{ padding: "1rem", textAlign: "right" }}>
-                          <button onClick={() => markSold(listing)} className="btn btn-outline" disabled={listing.status === "SOLD"} style={{ padding: "0.3rem 0.8rem", fontSize: "0.8rem", marginRight: "0.5rem" }}>Mark Sold</button>
-                          <button onClick={() => deleteListing(listing.id)} className="btn btn-outline" style={{ padding: "0.3rem 0.8rem", fontSize: "0.8rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>Delete</button>
+                          {listing.status !== "PENDING" && (
+                            <>
+                              <button
+                                onClick={() => toggleSold(listing)}
+                                className="btn btn-outline"
+                                style={{
+                                  padding: "0.3rem 0.8rem",
+                                  fontSize: "0.8rem",
+                                  marginRight: "0.5rem"
+                                }}
+                              >
+                                {listing.status === "SOLD" ? "Mark Unsold" : "Mark Sold"}
+                              </button>
+                            </>
+                          )}
+
+                          <button
+                            onClick={() => deleteListing(listing.id)}
+                            className="btn btn-outline"
+                            style={{
+                              padding: "0.3rem 0.8rem",
+                              fontSize: "0.8rem",
+                              color: "var(--danger,#ef4444)",
+                              borderColor: "var(--danger,#ef4444)"
+                            }}
+                          >
+                            Delete
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -367,8 +409,8 @@ export const AgentDashboardPage = (): JSX.Element => {
                   <div style={{ background: "var(--bg-primary)", borderRadius: "8px", padding: "1.5rem", marginBottom: "1rem" }}>
                     <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "var(--text-light)", marginBottom: "0.5rem" }}>Agent Role</div>
                     <span className={`badge ${status === "APPROVED" || status === "VERIFIED"
-                        ? "badge-success"
-                        : "badge-warning"
+                      ? "badge-success"
+                      : "badge-warning"
                       }`}>
                       {verification?.status || "PENDING"}
                     </span>
