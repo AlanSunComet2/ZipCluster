@@ -2,6 +2,7 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import { AdminDashboardPage } from "./pages/admin/AdminDashboardPage";
 import { AgentDashboardPage } from "./pages/agent/AgentDashboardPage";
+import { AgentDirectoryPage } from "./pages/user/AgentDirectoryPage";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { RegisterPage } from "./pages/auth/RegisterPage";
 import { UserDiscoveryPage } from "./pages/user/UserDiscoveryPage";
@@ -16,6 +17,10 @@ export const router = createBrowserRouter([
   {
     path: "/property/:id",
     element: <PropertyDetailsPage />,
+  },
+  {
+    path: "/agent/public-profile",
+    element: <AgentDirectoryPage />,
   },
   {
     path: "/saved",

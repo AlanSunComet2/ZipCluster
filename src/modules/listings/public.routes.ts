@@ -1,8 +1,17 @@
 import { Router } from "express";
 import { listingStore } from "./listing.store";
+import { userStore } from "../users/user.store";
 
 export const createPublicListingRouter = (): Router => {
   const router = Router();
+
+  router.get("/agents", async (_req, res) => {
+    const users = await userStore.list();
+    const agents = users
+      .filter((u) => u.role === "AGENT" && u.isVerified && u.isActive)
+      .map((u) => ({ id: u.id, email: u.email, createdAt: u.createdAt }));
+    res.status(200).json({ items: agents });
+  });
 
   router.get("/", async (req, res) => {
     const priceMin = Number(req.query.priceMin ?? 0);
