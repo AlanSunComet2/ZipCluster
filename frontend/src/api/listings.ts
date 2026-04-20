@@ -33,4 +33,6 @@ export const createListingsApi = (client: ApiClient) => ({
     client.request<ListingSummary>("GET", `/listings/${id}`),
   getUserListings: (query: ListingQuery): Promise<{ items: ListingSummary[] }> =>
     client.request<{ items: ListingSummary[] }>("GET", `/users/listings${toQueryString(query)}`),
+  getPublicAgents: (): Promise<{ items: Array<{ id: string; email: string; createdAt: string }> }> =>
+    client.request("GET", "/listings/agents"),
 });
