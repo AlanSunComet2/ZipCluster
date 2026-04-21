@@ -149,7 +149,7 @@ export const UserDiscoveryPage = (): JSX.Element => {
             </h2>
             {session && (
               <Link to="/saved" style={{ fontSize: "0.9rem", color: "var(--primary-color)", textDecoration: "none", fontWeight: 600 }}>
-                <i className="bi bi-heart-fill me-1"></i>Saved Properties
+                <i className="bi bi-heart-fill me-1" style={{ marginRight: "0.25rem" }}></i>Saved Properties
               </Link>
             )}
           </div>
