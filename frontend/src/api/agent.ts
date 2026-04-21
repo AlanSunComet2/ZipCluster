@@ -62,8 +62,10 @@ export const createAgentApi = (client: ApiClient) => ({
     notes?: string;
     licenseDocuments: Array<{ fileUrl: string; mimeType: string }>;
   }): Promise<{ id: string; status: string }> => client.request("POST", "/agents/me/application", payload),
-  listInquiries: (): Promise<{ items: Array<{ id: string; message: string; threadId: string }> }> =>
+  listInquiries: (): Promise<{ items: Array<{ id: string; message: string; status: string }> }> =>
     client.request("GET", "/agents/inquiries"),
+  resolveInquiry: (inquiryId: string, status: "ANSWERED" | "RESOLVED"): Promise<{ ok: boolean }> =>
+    client.request("PATCH", `/agents/inquiries/${inquiryId}/status`, { status }),
   respondToInquiry: (inquiryId: string, message: string): Promise<{ id: string; content: string }> =>
     client.request("POST", `/agents/inquiries/${inquiryId}/respond`, { message }),
   listTourRequests: (): Promise<{ items: Array<{ id: string; status: string; preferredTime: string }> }> =>
