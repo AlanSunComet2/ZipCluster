@@ -15,6 +15,8 @@ export interface UserRecord {
   phoneNumber: string | null;
   licenseNumber: string | null;
   licenseExpirationDate: Date | null;
+  bio: string | null;
+  profilePictureUrl: string | null;
 }
 
 // We define the parameter to exactly match what Prisma returns
@@ -33,6 +35,8 @@ const toRecord = (user: {
   phoneNumber: string | null;
   licenseNumber: string | null;
   licenseExpirationDate: Date | null;
+  bio: string | null;
+  profilePictureUrl: string | null;
 }): UserRecord => ({
   id: user.id,
   email: user.email,
@@ -47,6 +51,9 @@ const toRecord = (user: {
   phoneNumber: user.phoneNumber,
   licenseNumber: user.licenseNumber,
   licenseExpirationDate: user.licenseExpirationDate,
+  bio: user.bio,
+  profilePictureUrl: user.profilePictureUrl,
+  
 });
 
 export const userStore = {
@@ -76,6 +83,8 @@ export const userStore = {
         phoneNumber: user.phoneNumber,
         licenseNumber: user.licenseNumber,
         licenseExpirationDate: user.licenseExpirationDate,
+        bio: user.bio,
+  profilePictureUrl: user.profilePictureUrl,
       },
       update: {
         email: user.email.toLowerCase(),
@@ -89,6 +98,8 @@ export const userStore = {
         phoneNumber: user.phoneNumber,
         licenseNumber: user.licenseNumber,
         licenseExpirationDate: user.licenseExpirationDate,
+        bio: user.bio,
+  profilePictureUrl: user.profilePictureUrl,
       },
     });
     return toRecord(saved);

@@ -1,6 +1,14 @@
 import type { ListingSummary } from "./contracts";
 import { ApiClient } from "./client";
 
+
+export interface AgentPublicProfileInput {
+  bio?: string;
+  profilePictureUrl?: string;
+  contactEmail: string;
+  phoneNumber: string;
+}
+
 export interface AgentListingInput {
   price: number;
   location: string;
@@ -29,12 +37,16 @@ export const createAgentApi = (client: ApiClient) => ({
     isActive: boolean; 
     applicationStatus: string; 
     latestApplication?: any;
-    user?: { email: string; contactEmail?: string; fullName?: string; phoneNumber?: string; licenseNumber?: string; licenseExpirationDate?: string } 
+    user?: { email: string; contactEmail?: string; fullName?: string; phoneNumber?: string; licenseNumber?: string; licenseExpirationDate?: string;bio?: string; profilePictureUrl?: string; } 
   }> => client.request("GET", "/agents/verification-status"),
 
   // Add this new method
   updateProfile: (payload: AgentProfileInput): Promise<{ message: string }> =>
     client.request("PUT", "/agents/me/profile", payload),
+
+  // NEW
+  updatePublicProfile: (payload: AgentPublicProfileInput): Promise<{ message: string }> =>
+    client.request("PUT", "/agents/me/public-profile", payload),
 
   listMyListings: (): Promise<{ items: ListingSummary[] }> =>
     client.request<{ items: ListingSummary[] }>("GET", "/agents/me/listings"),

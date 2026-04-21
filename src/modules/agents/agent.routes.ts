@@ -24,7 +24,16 @@ const majorEditDetected = (payload: {
   return Boolean(payload.price || payload.location || payload.description || payload.mediaUrls?.length);
 };
 
-// new
+// Pubic profile
+const publicProfileUpdateSchema = z.object({
+  bio: z.string().optional(),
+  // .or(z.literal("")) allows the user to leave the URL blank without triggering a validation error
+  profilePictureUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")), 
+  contactEmail: z.string().email("Must be a valid email"),
+  phoneNumber: z.string().min(1, "Phone number is required"),
+});
+
+// Verification
 const profileUpdateSchema = z.object({
   fullName: z.string().optional(),
   contactEmail: z.string().email("Must be a valid email"),
@@ -106,6 +115,8 @@ export const createAgentRouter = (): Router => {
         phoneNumber: user.phoneNumber,
         licenseNumber: user.licenseNumber,
         licenseExpirationDate: user.licenseExpirationDate,
+        bio: user.bio,
+        profilePictureUrl: user.profilePictureUrl 
       }
     });
   });
@@ -149,6 +160,27 @@ export const createAgentRouter = (): Router => {
     }
 
     res.status(200).json({ message: "Profile updated successfully." });
+  });
+
+  // NEW
+  router.put("/me/public-profile", validateBody(publicProfileUpdateSchema), async (req: AuthenticatedRequest, res) => {
+    const user = await userStore.findById(req.user?.sub ?? "");
+    if (!user || user.role !== "AGENT") {
+      res.status(404).json({ message: "Agent not found." });
+      return;
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        bio: req.body.bio,
+        profilePictureUrl: req.body.profilePictureUrl || null,
+        contactEmail: req.body.contactEmail.toLowerCase(),
+        phoneNumber: req.body.phoneNumber,
+      }
+    });
+    
+    res.status(200).json({ message: "Public profile updated successfully." });
   });
 
 

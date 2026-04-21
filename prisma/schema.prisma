@@ -61,6 +61,8 @@ model User {
   licenseNumber             String?
   licenseExpirationDate     DateTime?
   contactEmail              String?
+  bio                       String?
+  profilePictureUrl         String?
 
   @@index([role])
   @@index([isVerified])
