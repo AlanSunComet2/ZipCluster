@@ -10,8 +10,16 @@ export interface UserRecord {
   isActive: boolean;
   deactivatedAt: Date | null;
   createdAt: Date;
+  fullName: string | null;
+  contactEmail: string | null;
+  phoneNumber: string | null;
+  licenseNumber: string | null;
+  licenseExpirationDate: Date | null;
+  bio: string | null;
+  profilePictureUrl: string | null;
 }
 
+// We define the parameter to exactly match what Prisma returns
 const toRecord = (user: {
   id: string;
   email: string;
@@ -21,6 +29,14 @@ const toRecord = (user: {
   isActive: boolean;
   deactivatedAt: Date | null;
   createdAt: Date;
+  updatedAt: Date;
+  fullName: string | null;
+  contactEmail: string | null;
+  phoneNumber: string | null;
+  licenseNumber: string | null;
+  licenseExpirationDate: Date | null;
+  bio: string | null;
+  profilePictureUrl: string | null;
 }): UserRecord => ({
   id: user.id,
   email: user.email,
@@ -30,6 +46,14 @@ const toRecord = (user: {
   isActive: user.isActive,
   deactivatedAt: user.deactivatedAt,
   createdAt: user.createdAt,
+  fullName: user.fullName,
+  contactEmail: user.contactEmail,
+  phoneNumber: user.phoneNumber,
+  licenseNumber: user.licenseNumber,
+  licenseExpirationDate: user.licenseExpirationDate,
+  bio: user.bio,
+  profilePictureUrl: user.profilePictureUrl,
+  
 });
 
 export const userStore = {
@@ -54,6 +78,13 @@ export const userStore = {
         isVerified: user.isVerified,
         isActive: user.isActive,
         deactivatedAt: user.deactivatedAt,
+        fullName: user.fullName,
+        contactEmail: user.contactEmail,
+        phoneNumber: user.phoneNumber,
+        licenseNumber: user.licenseNumber,
+        licenseExpirationDate: user.licenseExpirationDate,
+        bio: user.bio,
+  profilePictureUrl: user.profilePictureUrl,
       },
       update: {
         email: user.email.toLowerCase(),
@@ -62,6 +93,13 @@ export const userStore = {
         isVerified: user.isVerified,
         isActive: user.isActive,
         deactivatedAt: user.deactivatedAt,
+        fullName: user.fullName,
+        contactEmail: user.contactEmail,
+        phoneNumber: user.phoneNumber,
+        licenseNumber: user.licenseNumber,
+        licenseExpirationDate: user.licenseExpirationDate,
+        bio: user.bio,
+  profilePictureUrl: user.profilePictureUrl,
       },
     });
     return toRecord(saved);

@@ -14,6 +14,7 @@ enum UserRole {
 }
 
 enum ListingStatus {
+  DRAFT
   PENDING
   APPROVED
   SOLD
@@ -55,6 +56,13 @@ model User {
   listingModerationActions    ListingModerationAction[]  @relation("ModerationActionBy")
   agentReviewsOnListings      PropertyListingReview[]    @relation("ListingReviewAuthor")
   createdNotificationEvents   NotificationEvent[]        @relation("NotificationEventCreator")
+  fullName                  String?
+  phoneNumber               String?
+  licenseNumber             String?
+  licenseExpirationDate     DateTime?
+  contactEmail              String?
+  bio                       String?
+  profilePictureUrl         String?
 
   @@index([role])
   @@index([isVerified])
@@ -88,6 +96,9 @@ model PropertyListing {
   propertyType          PropertyType?            @relation(fields: [propertyTypeId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   geoCategory           GeoCategory?             @relation(fields: [geoCategoryId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   messageThreads        MessageThread[]
+  bedrooms              Int?
+  bathrooms             Float?
+  squareFeet            Int?
 
   @@index([agentId])
   @@index([status])

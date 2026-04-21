@@ -144,6 +144,44 @@ export const PropertyDetailsPage = (): JSX.Element => {
               </button>
             </div>
           </div>
+          {/* Add this block right below where the Price and Location are displayed */}
+          <div style={{ 
+            display: "flex", 
+            gap: "1.5rem", 
+            padding: "1rem 0", 
+            borderTop: "1px solid rgba(0,0,0,0.1)", 
+            borderBottom: "1px solid rgba(0,0,0,0.1)", 
+            marginBottom: "2rem",
+            flexWrap: "wrap"
+          }}>
+            {listing.propertyType && (
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--text-light)", textTransform: "uppercase", fontWeight: 700 }}>Type</span>
+                <span style={{ fontWeight: 600, fontSize: "1.1rem" }}><i className="bi bi-house-door me-2"></i>{listing.propertyType}</span>
+              </div>
+            )}
+            
+            {listing.bedrooms != null && (
+              <div style={{ display: "flex", flexDirection: "column", borderLeft: "1px solid #eee", paddingLeft: "1.5rem" }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--text-light)", textTransform: "uppercase", fontWeight: 700 }}>Bedrooms</span>
+                <span style={{ fontWeight: 600, fontSize: "1.1rem" }}><i className="bi bi-door-open me-2"></i>{listing.bedrooms} Beds</span>
+              </div>
+            )}
+
+            {listing.bathrooms != null && (
+              <div style={{ display: "flex", flexDirection: "column", borderLeft: "1px solid #eee", paddingLeft: "1.5rem" }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--text-light)", textTransform: "uppercase", fontWeight: 700 }}>Bathrooms</span>
+                <span style={{ fontWeight: 600, fontSize: "1.1rem" }}><i className="bi bi-droplet me-2"></i>{listing.bathrooms} Baths</span>
+              </div>
+            )}
+
+            {listing.squareFeet != null && (
+              <div style={{ display: "flex", flexDirection: "column", borderLeft: "1px solid #eee", paddingLeft: "1.5rem" }}>
+                <span style={{ fontSize: "0.8rem", color: "var(--text-light)", textTransform: "uppercase", fontWeight: 700 }}>Square Feet</span>
+                <span style={{ fontWeight: 600, fontSize: "1.1rem" }}><i className="bi bi-arrows-fullscreen me-2"></i>{listing.squareFeet.toLocaleString()} sqft</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Image Gallery */}

@@ -6,7 +6,7 @@ import { Footer } from "../../components/layout/Footer";
 import type { ListingSummary } from "../../api/contracts";
 import { Link } from "react-router-dom";
 
-type Section = "overview" | "listings" | "create" | "inquiries" | "profile";
+type Section = "overview" | "listings" | "create" | "inquiries" | "profile" | "edit" | "public-profile";
 
 export const AgentDashboardPage = (): JSX.Element => {
   const client = useApiClient();
@@ -16,16 +16,34 @@ export const AgentDashboardPage = (): JSX.Element => {
   const [msg, setMsg] = useState("");
   const [activeSection, setActiveSection] = useState<Section>("overview");
 
+  // Profile form state
+  const [profileForm, setProfileForm] = useState({
+    fullName: "",
+    email: "",
+    contactEmail: "",
+    phoneNumber: "",
+    licenseNumber: "",
+    licenseExpirationDate: "",
+    licenseUrl: ""
+  });
+
   const [listings, setListings] = useState<ListingSummary[]>([]);
   const [inquiries, setInquiries] = useState<Array<{ id: string; message: string; status: string }>>([]);
   const [tourRequests, setTourRequests] = useState<Array<{ id: string; status: string; preferredTime: string }>>([]);
   const [verification, setVerification] = useState<{ status: string; applicationStatus: string } | null>(null);
+  // Public Profile form state
+  const [publicProfileForm, setPublicProfileForm] = useState({
+    bio: "", profilePictureUrl: "", contactEmail: "", phoneNumber: ""
+  });
 
   // Profile form
   const [docUrl, setDocUrl] = useState("");
 
   // Create listing form
-  const [newListing, setNewListing] = useState({ price: "", location: "", propertyType: "House", description: "", mediaUrls: "" });
+  const [newListing, setNewListing] = useState({ price: "", location: "", propertyType: "House", description: "", mediaUrls: "",bedrooms: "", bathrooms: "", squareFeet: "" });
+
+  // Edit listing form (NEW)
+  const [editListing, setEditListing] = useState<any>(null);
 
   const [inquiryResponses, setInquiryResponses] = useState<Record<string, string>>({});
 
@@ -44,6 +62,27 @@ export const AgentDashboardPage = (): JSX.Element => {
       setInquiries(inquiriesRes.items);
       setTourRequests(toursRes.items);
       setVerification(verRes);
+      
+      // PRE-FILL THE PROFILE FORM
+      if (verRes.user) {
+       setProfileForm({
+          fullName: "",
+          email: verRes.user.email || "", // Keep the login email populated for the locked field
+          contactEmail: "",
+          phoneNumber: "",
+          licenseNumber: "",
+          licenseExpirationDate: "",
+          licenseUrl: ""
+        });
+
+        // Add this to pre-fill the Public Profile tab:
+        setPublicProfileForm({
+          bio: verRes.user.bio || "",
+          profilePictureUrl: verRes.user.profilePictureUrl || "",
+          contactEmail: verRes.user.contactEmail || "",
+          phoneNumber: verRes.user.phoneNumber || ""
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -51,7 +90,25 @@ export const AgentDashboardPage = (): JSX.Element => {
 
   useEffect(() => { void loadAll(); }, [agentApi]);
 
-  const createListing = async (e: React.FormEvent) => {
+  // NEW
+  const updatePublicProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await agentApi.updatePublicProfile({
+        bio: publicProfileForm.bio,
+        profilePictureUrl: publicProfileForm.profilePictureUrl,
+        contactEmail: publicProfileForm.contactEmail,
+        phoneNumber: publicProfileForm.phoneNumber
+      });
+      flash("✓ Public profile updated successfully!");
+      void loadAll();
+    } catch {
+      flash("✗ Failed to update public profile. Ensure URLs and Emails are valid.");
+    }
+  };
+
+  // NEW
+  const createListing = async (e: React.FormEvent, statusToSave: "DRAFT" | "PENDING") => {
     e.preventDefault();
     try {
       await agentApi.createListing({
@@ -59,13 +116,66 @@ export const AgentDashboardPage = (): JSX.Element => {
         location: newListing.location,
         propertyType: newListing.propertyType,
         description: newListing.description,
+        bedrooms: newListing.bedrooms ? Number(newListing.bedrooms) : undefined,
+        bathrooms: newListing.bathrooms ? Number(newListing.bathrooms) : undefined,
+        squareFeet: newListing.squareFeet ? Number(newListing.squareFeet) : undefined,
+        status: statusToSave,
         mediaUrls: newListing.mediaUrls.split(",").map(u => u.trim()).filter(Boolean),
       });
-      setNewListing({ price: "", location: "", propertyType: "House", description: "", mediaUrls: "" });
-      flash("✓ Listing submitted for admin review.");
+      setNewListing({ price: "", location: "", propertyType: "House", description: "", mediaUrls: "", bedrooms: "", bathrooms: "", squareFeet: "" });
+      
+      flash(statusToSave === "DRAFT" ? "✓ Draft saved successfully." : "✓ Listing submitted for admin review.");
       setActiveSection("listings");
       void loadAll();
     } catch { flash("✗ Failed to create listing."); }
+  };
+
+  const startEditing = (listing: any) => {
+    setEditListing({
+      id: listing.id,
+      price: listing.price.toString(),
+      location: listing.location,
+      propertyType: listing.propertyType || "House",
+      description: listing.description || "",
+      bedrooms: listing.bedrooms?.toString() || "",
+      bathrooms: listing.bathrooms?.toString() || "",
+      squareFeet: listing.squareFeet?.toString() || "",
+      mediaUrls: listing.mediaUrls?.join(", ") || "",
+      status: listing.status
+    });
+    setActiveSection("edit");
+  };
+
+  const submitEdit = async (e: React.FormEvent, statusToSave?: "DRAFT" | "PENDING") => {
+    e.preventDefault();
+    if (!editListing) return;
+    
+    try {
+      const payload: any = {
+        price: Number(editListing.price),
+        location: editListing.location,
+        propertyType: editListing.propertyType,
+        description: editListing.description,
+        bedrooms: editListing.bedrooms ? Number(editListing.bedrooms) : undefined,
+        bathrooms: editListing.bathrooms ? Number(editListing.bathrooms) : undefined,
+        squareFeet: editListing.squareFeet ? Number(editListing.squareFeet) : undefined,
+        mediaUrls: editListing.mediaUrls.split(",").map((u: string) => u.trim()).filter(Boolean),
+      };
+      
+      // If the user explicitly clicked "Save as Draft" or "Submit for Review"
+      if (statusToSave) {
+        payload.status = statusToSave;
+      }
+
+      await agentApi.updateListing(editListing.id, payload);
+      
+      setEditListing(null);
+      flash("✓ Listing updated successfully. (Major edits may require re-approval)");
+      setActiveSection("listings");
+      void loadAll();
+    } catch { 
+      flash("✗ Failed to update listing."); 
+    }
   };
 
   const markSold = async (listing: ListingSummary) => {
@@ -108,6 +218,7 @@ export const AgentDashboardPage = (): JSX.Element => {
     void loadAll();
   };
 
+  const updateProfileSubmit = async (e: React.FormEvent) => {
   const declineTour = async (id: string) => {
     await agentApi.updateTourRequest(id, "DECLINED");
     flash("✓ Tour declined.");
@@ -116,16 +227,20 @@ export const AgentDashboardPage = (): JSX.Element => {
 
   const submitApplication = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!docUrl.trim()) return;
     try {
-      await agentApi.submitApplication({
-        notes: "Submitted from agent dashboard",
-        licenseDocuments: [{ fileUrl: docUrl.trim(), mimeType: "application/pdf" }],
+      await agentApi.updateProfile({
+        fullName: profileForm.fullName,
+        contactEmail: profileForm.contactEmail,
+        phoneNumber: profileForm.phoneNumber,
+        licenseNumber: profileForm.licenseNumber,
+        licenseExpirationDate: profileForm.licenseExpirationDate ? new Date(profileForm.licenseExpirationDate).toISOString() : undefined,
+        licenseUrl: profileForm.licenseUrl
       });
-      setDocUrl("");
-      flash("✓ Application submitted for review!");
+      flash("Profile updated and license submitted for review!");
       void loadAll();
-    } catch { flash("✗ Failed to submit."); }
+    } catch { 
+      flash("Failed to update profile. Please ensure all fields are correct."); 
+    }
   };
 
   // Parse contact details out of the structured message the user submitted
@@ -155,6 +270,9 @@ export const AgentDashboardPage = (): JSX.Element => {
     { key: "overview", label: "Overview", icon: "bi-speedometer2" },
     { key: "listings", label: "My Listings", icon: "bi-house-door", badge: stats.active },
     { key: "create", label: "New Listing", icon: "bi-plus-circle" },
+    { key: "inquiries", label: "Inquiries", icon: "bi-chat-left-dots", badge: inquiries.length },
+    { key: "profile", label: "Verification", icon: "bi-shield-check" },
+    { key: "public-profile", label: "Update Profile", icon: "bi-person-badge" }, // <-- New Item
     { key: "inquiries", label: "Inquiries", icon: "bi-chat-left-dots", badge: (inquiries.length + tourRequests.length) },
     { key: "profile", label: "Verification", icon: "bi-person-badge" },
   ];
@@ -171,6 +289,17 @@ export const AgentDashboardPage = (): JSX.Element => {
     }
   };
 
+  // NEW
+  const submitDraft = async (listing: ListingSummary) => {
+    try {
+      await agentApi.updateListing(listing.id, { status: "PENDING" });
+      flash("✓ Draft submitted for admin review.");
+      void loadAll();
+    } catch {
+      flash("✗ Failed to submit draft.");
+    }
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       <Navbar />
@@ -180,7 +309,7 @@ export const AgentDashboardPage = (): JSX.Element => {
         <nav style={{ width: "220px", background: "white", borderRight: "1px solid rgba(0,0,0,0.06)", padding: "2rem 1rem", flexShrink: 0 }}>
           <div style={{ marginBottom: "1.5rem", padding: "0 0.5rem" }}>
             <div style={{ fontWeight: 800, fontSize: "1rem" }}>Agent Portal</div>
-            <div style={{ fontSize: "0.8rem", color: "var(--text-light)" }}>Manage your listings</div>
+            <div style={{ fontSize: "0.8rem", color: "var(--text-light)" }}>facilitates buying, selling, or renting of property</div>
           </div>
           <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.25rem" }}>
             {navItems.map(item => (
@@ -304,25 +433,62 @@ export const AgentDashboardPage = (): JSX.Element => {
                         </td>
                         <td style={{ padding: "1rem", fontWeight: 700 }}>${listing.price.toLocaleString()}</td>
                         <td style={{ padding: "1rem" }}>
-                          <span className={`badge ${listing.status === "APPROVED" ? "badge-success" : listing.status === "PENDING" ? "badge-warning" : "badge-danger"}`}>{listing.status}</span>
+                          {/* Distinct styling applied to DRAFT status */}
+                          <span 
+                            className={`badge ${listing.status === "APPROVED" ? "badge-success" : listing.status === "PENDING" ? "badge-warning" : "badge-danger"}`}
+                            style={listing.status === "DRAFT" ? { background: "#ef4444", color: "#white" } : {}}
+                          >
+                            {listing.status}
+                          </span>
                         </td>
                         <td style={{ padding: "1rem", textAlign: "right" }}>
-                          {listing.status !== "PENDING" && (
-                            <>
-                              <button
-                                onClick={() => toggleSold(listing)}
-                                className="btn btn-outline"
-                                style={{
-                                  padding: "0.3rem 0.8rem",
-                                  fontSize: "0.8rem",
-                                  marginRight: "0.5rem"
-                                }}
-                              >
-                                {listing.status === "SOLD" ? "Mark Unsold" : "Mark Sold"}
-                              </button>
-                            </>
+                          
+                          {/* If DRAFT: Show Submit Button */}
+                          {listing.status === "DRAFT" && (
+                            <button
+                              onClick={() => submitDraft(listing)}
+                              className="btn btn-primary"
+                              style={{
+                                padding: "0.3rem 0.8rem",
+                                fontSize: "0.8rem",
+                                marginRight: "0.5rem"
+                              }}
+                            >
+                              Submit for Review
+                            </button>
                           )}
 
+                          {/* If APPROVED or SOLD: Show Mark Sold/Unsold */}
+                          {(listing.status === "APPROVED" || listing.status === "SOLD") && (
+                            <button
+                              onClick={() => toggleSold(listing)}
+                              className="btn btn-outline"
+                              style={{
+                                padding: "0.3rem 0.8rem",
+                                fontSize: "0.8rem",
+                                marginRight: "0.5rem"
+                              }}
+                            >
+                              {listing.status === "SOLD" ? "Mark Unsold" : "Mark Sold"}
+                            </button>
+                          )}
+
+                          {/* ALWAYS SHOW: Edit Button NEW */}
+                          <button
+                            onClick={() => startEditing(listing)}
+                            className="btn btn-outline"
+                            style={{
+                              padding: "0.3rem 0.8rem",
+                              fontSize: "0.8rem",
+                              marginRight: "0.5rem",
+                              color: "var(--primary-color)",
+                              borderColor: "var(--primary-color)"
+                            }}
+                          >
+                            Edit
+                          </button>
+
+                          {/* ALWAYS SHOW: Delete Button */}
                           <button
                             onClick={() => deleteListing(listing.id)}
                             className="btn btn-outline"
@@ -345,42 +511,158 @@ export const AgentDashboardPage = (): JSX.Element => {
           )}
 
           {/* CREATE LISTING */}
+          {/* CREATE LISTING */}
           {activeSection === "create" && (
             <>
               <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Create New Listing</h1>
-              <div className="card" style={{ padding: "2rem", maxWidth: "680px" }}>
-                <form onSubmit={createListing}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
+              <div className="card" style={{ padding: "2rem", maxWidth: "800px" }}>
+                {/* Notice we removed onSubmit from the form tag and moved it to the buttons */}
+                <form>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
                     <div className="form-group">
-                      <label className="form-label text-muted">Location / Address</label>
+                      <label className="form-label text-muted">Location / Address *</label>
                       <input className="form-control" required placeholder="123 Main St, Austin, TX"
                         value={newListing.location} onChange={e => setNewListing(n => ({ ...n, location: e.target.value }))} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label text-muted">Price (USD)</label>
+                      <label className="form-label text-muted">Price (USD) *</label>
                       <input className="form-control" type="number" required min="1" placeholder="500000"
                         value={newListing.price} onChange={e => setNewListing(n => ({ ...n, price: e.target.value }))} />
                     </div>
                   </div>
-                  <div className="form-group" style={{ marginBottom: "1.5rem" }}>
-                    <label className="form-label text-muted">Property Type</label>
-                    <select className="form-control" value={newListing.propertyType} onChange={e => setNewListing(n => ({ ...n, propertyType: e.target.value }))}>
-                      {["House", "Condo", "Townhouse", "Land"].map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                  
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Property Type</label>
+                      <select className="form-control" value={newListing.propertyType} onChange={e => setNewListing(n => ({ ...n, propertyType: e.target.value }))}>
+                        {["House", "Condo", "Townhouse", "Land"].map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Bedrooms</label>
+                      <input className="form-control" type="number" min="0" placeholder="e.g. 3"
+                        value={newListing.bedrooms} onChange={e => setNewListing(n => ({ ...n, bedrooms: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Bathrooms</label>
+                      <input className="form-control" type="number" step="0.5" min="0" placeholder="e.g. 2.5"
+                        value={newListing.bathrooms} onChange={e => setNewListing(n => ({ ...n, bathrooms: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Square Feet</label>
+                      <input className="form-control" type="number" min="0" placeholder="e.g. 2000"
+                        value={newListing.squareFeet} onChange={e => setNewListing(n => ({ ...n, squareFeet: e.target.value }))} />
+                    </div>
                   </div>
+
                   <div className="form-group" style={{ marginBottom: "1.5rem" }}>
-                    <label className="form-label text-muted">Description</label>
+                    <label className="form-label text-muted">Description *</label>
                     <textarea className="form-control" required rows={5} placeholder="Describe the property..."
                       value={newListing.description} onChange={e => setNewListing(n => ({ ...n, description: e.target.value }))}></textarea>
                   </div>
+                  
                   <div className="form-group" style={{ marginBottom: "2rem" }}>
-                    <label className="form-label text-muted">Media URLs (comma-separated)</label>
-                    <input className="form-control" placeholder="https://example.com/photo1.jpg, ..."
-                      value={newListing.mediaUrls} onChange={e => setNewListing(n => ({ ...n, mediaUrls: e.target.value }))} />
+                    <label className="form-label text-muted">Media URLs (Upload multiple by separating with commas)</label>
+                    <textarea className="form-control" rows={2} placeholder="https://example.com/photo1.jpg, https://example.com/photo2.jpg"
+                      value={newListing.mediaUrls} onChange={e => setNewListing(n => ({ ...n, mediaUrls: e.target.value }))}></textarea>
+                    <small className="text-muted" style={{ display: "block", marginTop: "0.5rem" }}>Please separate multiple image links with a comma.</small>
                   </div>
-                  <div style={{ display: "flex", gap: "1rem" }}>
-                    <button type="submit" className="btn btn-primary">Submit for Review</button>
-                    <button type="button" className="btn btn-outline" onClick={() => setActiveSection("listings")}>Cancel</button>
+
+                  <div style={{ display: "flex", gap: "1rem", borderTop: "1px solid #eee", paddingTop: "1.5rem" }}>
+                    <button type="button" className="btn btn-outline" onClick={(e) => createListing(e, "DRAFT")}>
+                      <i className="bi bi-save me-1"></i> Save as Draft
+                    </button>
+                    <button type="button" className="btn btn-primary" onClick={(e) => createListing(e, "PENDING")}>
+                      <i className="bi bi-send me-1"></i> Submit for Review
+                    </button>
+                    <button type="button" className="btn btn-outline" style={{ marginLeft: "auto", border: "none" }} onClick={() => setActiveSection("listings")}>Cancel</button>
+                  </div>
+                </form>
+              </div>
+            </>
+          )}
+
+          {/* EDIT LISTING NEW */}
+          {activeSection === "edit" && editListing && (
+            <>
+              <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Edit Property Listing</h1>
+              <div className="card" style={{ padding: "2rem", maxWidth: "800px" }}>
+                
+                {editListing.status === "APPROVED" && (
+                  <div style={{ borderLeft: "4px solid var(--warning)", paddingLeft: "1rem", marginBottom: "1.5rem", color: "var(--text-secondary)", fontSize: "0.9rem" }}>
+                    <strong>Note:</strong> This listing is currently Live. Making major changes to the Price, Location, or Media will temporarily hide the listing until an Admin re-approves it.
+                  </div>
+                )}
+
+                <form>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Location / Address *</label>
+                      <input className="form-control" required placeholder="123 Main St, Austin, TX"
+                        value={editListing.location} onChange={e => setEditListing((n: any) => ({ ...n, location: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Price (USD) *</label>
+                      <input className="form-control" type="number" required min="1" placeholder="500000"
+                        value={editListing.price} onChange={e => setEditListing((n: any) => ({ ...n, price: e.target.value }))} />
+                    </div>
+                  </div>
+                  
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Property Type</label>
+                      <select className="form-control" value={editListing.propertyType} onChange={e => setEditListing((n: any) => ({ ...n, propertyType: e.target.value }))}>
+                        {["House", "Condo", "Townhouse", "Land"].map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Bedrooms</label>
+                      <input className="form-control" type="number" min="0" placeholder="e.g. 3"
+                        value={editListing.bedrooms} onChange={e => setEditListing((n: any) => ({ ...n, bedrooms: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Bathrooms</label>
+                      <input className="form-control" type="number" step="0.5" min="0" placeholder="e.g. 2.5"
+                        value={editListing.bathrooms} onChange={e => setEditListing((n: any) => ({ ...n, bathrooms: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Square Feet</label>
+                      <input className="form-control" type="number" min="0" placeholder="e.g. 2000"
+                        value={editListing.squareFeet} onChange={e => setEditListing((n: any) => ({ ...n, squareFeet: e.target.value }))} />
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: "1.5rem" }}>
+                    <label className="form-label text-muted">Description *</label>
+                    <textarea className="form-control" required rows={5} placeholder="Describe the property..."
+                      value={editListing.description} onChange={e => setEditListing((n: any) => ({ ...n, description: e.target.value }))}></textarea>
+                  </div>
+                  
+                  <div className="form-group" style={{ marginBottom: "2rem" }}>
+                    <label className="form-label text-muted">Media URLs (Upload multiple by separating with commas)</label>
+                    <textarea className="form-control" rows={2} placeholder="https://example.com/photo1.jpg, https://example.com/photo2.jpg"
+                      value={editListing.mediaUrls} onChange={e => setEditListing((n: any) => ({ ...n, mediaUrls: e.target.value }))}></textarea>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "1rem", borderTop: "1px solid #eee", paddingTop: "1.5rem" }}>
+                    
+                    {/* Show Draft options if it's currently a Draft */}
+                    {editListing.status === "DRAFT" ? (
+                      <>
+                        <button type="button" className="btn btn-outline" onClick={(e) => submitEdit(e, "DRAFT")}>
+                          <i className="bi bi-save me-1"></i> Save Draft Updates
+                        </button>
+                        <button type="button" className="btn btn-primary" onClick={(e) => submitEdit(e, "PENDING")}>
+                          <i className="bi bi-send me-1"></i> Submit for Review
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" className="btn btn-primary" onClick={(e) => submitEdit(e)}>
+                        <i className="bi bi-check2-circle me-1"></i> Save Changes
+                      </button>
+                    )}
+
+                    <button type="button" className="btn btn-outline" style={{ marginLeft: "auto", border: "none" }} onClick={() => { setEditListing(null); setActiveSection("listings"); }}>Cancel</button>
                   </div>
                 </form>
               </div>
@@ -516,18 +798,18 @@ export const AgentDashboardPage = (): JSX.Element => {
           )}
 
           {/* VERIFICATION */}
+          {/* VERIFICATION */}
           {activeSection === "profile" && (
             <>
-              <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>License Verification</h1>
+              <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Verifying Profile and License</h1>
               <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
+                
+                {/* Status Tracker */}
                 <div className="card" style={{ flex: 1, minWidth: "280px", padding: "2rem" }}>
                   <h4 style={{ fontWeight: 800, marginBottom: "1.5rem" }}>Current Status</h4>
                   <div style={{ background: "var(--bg-primary)", borderRadius: "8px", padding: "1.5rem", marginBottom: "1rem" }}>
                     <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "var(--text-light)", marginBottom: "0.5rem" }}>Agent Role</div>
-                    <span className={`badge ${status === "APPROVED" || status === "VERIFIED"
-                      ? "badge-success"
-                      : "badge-warning"
-                      }`}>
+                    <span className={`badge ${status === "APPROVED" || status === "VERIFIED" ? "badge-success" : "badge-warning"}`}>
                       {verification?.status || "PENDING"}
                     </span>
                   </div>
@@ -536,25 +818,109 @@ export const AgentDashboardPage = (): JSX.Element => {
                     <div style={{ fontWeight: 700 }}>{verification?.applicationStatus || "NOT SUBMITTED"}</div>
                   </div>
                 </div>
+
+                {/* Profile Update Form */}
                 <div className="card" style={{ flex: 2, minWidth: "320px", padding: "2rem" }}>
-                  <h4 style={{ fontWeight: 800, marginBottom: "1rem" }}>Submit License Document</h4>
-                  <div style={{ borderLeft: "4px solid var(--primary-color)", paddingLeft: "1rem", marginBottom: "1.5rem", color: "var(--text-secondary)" }}>
-                    Your license must be reviewed by an admin before your listings go live to the public.
-                  </div>
-                  <form onSubmit={submitApplication}>
-                    <div className="form-group" style={{ marginBottom: "1.5rem" }}>
-                      <label className="form-label text-muted">License Document URL (PDF or image link)</label>
-                      <input type="url" className="form-control" required placeholder="https://example.com/my-license.pdf"
-                        value={docUrl} onChange={e => setDocUrl(e.target.value)} />
+                  <h4 style={{ fontWeight: 800, marginBottom: "1rem" }}>Required Information</h4>
+                  
+                  {/* Dynamic Status Message */}
+                  {status === "APPROVED" || status === "VERIFIED" ? (
+                    <div style={{ background: "rgba(16, 185, 129, 0.1)", border: "1px solid var(--success)", padding: "1rem", borderRadius: "8px", marginBottom: "1.5rem", color: "var(--success)", fontSize: "0.95rem", fontWeight: 600 }}>
+                      <i className="bi bi-check-circle-fill me-2"></i> Agent profile verification is complete.
                     </div>
-                    <button type="submit" className="btn btn-primary" disabled={verification?.applicationStatus === "PENDING"}>
-                      {verification?.applicationStatus === "PENDING" ? "Under Review" : "Submit Application"}
-                    </button>
+                  ) : (
+                    <div style={{ borderLeft: "4px solid var(--warning)", paddingLeft: "1rem", marginBottom: "1.5rem", color: "var(--text-secondary)", fontSize: "0.9rem" }}>
+                      Updating your profile will require an Admin to re-verify your license before your listings go live.
+                    </div>
+                  )}
+                  
+                  <form onSubmit={updateProfileSubmit}>
+                    
+                      <div className="form-group">
+                        <label className="form-label text-muted">Full Name</label>
+                        <input type="text" className="form-control" value={profileForm.fullName} onChange={e => setProfileForm(p => ({...p, fullName: e.target.value}))} readOnly={status === "APPROVED" || status === "VERIFIED"} style={status === "APPROVED" || status === "VERIFIED" ? { background: "#f8f9fa" } : {}} />
+                      </div>
+                    
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+                      <div className="form-group">
+                        <label className="form-label text-muted">Contact Email {(status !== "APPROVED" && status !== "VERIFIED") && "*"}</label>
+                        <input type="email" required={status !== "APPROVED" && status !== "VERIFIED"} className="form-control" value={profileForm.contactEmail} onChange={e => setProfileForm(p => ({...p, contactEmail: e.target.value}))} readOnly={status === "APPROVED" || status === "VERIFIED"} style={status === "APPROVED" || status === "VERIFIED" ? { background: "#f8f9fa" } : {}} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label text-muted">Phone Number</label>
+                        <input type="tel" className="form-control" value={profileForm.phoneNumber} onChange={e => setProfileForm(p => ({...p, phoneNumber: e.target.value}))} readOnly={status === "APPROVED" || status === "VERIFIED"} style={status === "APPROVED" || status === "VERIFIED" ? { background: "#f8f9fa" } : {}} />
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.5rem" }}>
+                      <div className="form-group">
+                        <label className="form-label text-muted">License Number {(status !== "APPROVED" && status !== "VERIFIED") && "*"}</label>
+                        <input type="text" className="form-control" required={status !== "APPROVED" && status !== "VERIFIED"} value={profileForm.licenseNumber} onChange={e => setProfileForm(p => ({...p, licenseNumber: e.target.value}))} readOnly={status === "APPROVED" || status === "VERIFIED"} style={status === "APPROVED" || status === "VERIFIED" ? { background: "#f8f9fa" } : {}} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label text-muted">Expiration Date</label>
+                        <input type="date" className="form-control" value={profileForm.licenseExpirationDate} onChange={e => setProfileForm(p => ({...p, licenseExpirationDate: e.target.value}))} readOnly={status === "APPROVED" || status === "VERIFIED"} style={status === "APPROVED" || status === "VERIFIED" ? { background: "#f8f9fa" } : {}} />
+                      </div>
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: "1.5rem" }}>
+                      <label className="form-label text-muted">License Document URL {(status !== "APPROVED" && status !== "VERIFIED") && "*"}</label>
+                      <input type="url" className="form-control" required={status !== "APPROVED" && status !== "VERIFIED"} value={profileForm.licenseUrl} onChange={e => setProfileForm(p => ({...p, licenseUrl: e.target.value}))} placeholder="https://example.com/license.jpg" readOnly={status === "APPROVED" || status === "VERIFIED"} style={status === "APPROVED" || status === "VERIFIED" ? { background: "#f8f9fa" } : {}} />
+                    </div>
+
+                    {/* Only show submit button if NOT approved */}
+                    {status !== "APPROVED" && status !== "VERIFIED" && (
+                      <button type="submit" className="btn btn-primary" disabled={verification?.applicationStatus === "PENDING"}>
+                        {verification?.applicationStatus === "PENDING" ? "Application Under Review" : "Save Profile & Submit License"}
+                      </button>
+                    )}
                   </form>
                 </div>
               </div>
             </>
           )}
+
+          {/* PUBLIC PROFILE UPDATE */}
+          {activeSection === "public-profile" && (
+            <>
+              <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Update Public Profile</h1>
+              <div className="card" style={{ padding: "2rem", maxWidth: "800px" }}>
+                <div style={{ borderLeft: "4px solid var(--primary-color)", paddingLeft: "1rem", marginBottom: "1.5rem", color: "var(--text-secondary)", fontSize: "0.9rem" }}>
+                  This information will be displayed on your public agent profile for buyers to see. Updating this does NOT affect your verification status.
+                </div>
+                <form onSubmit={updatePublicProfileSubmit}>
+                  
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Contact Email *</label>
+                      <input type="email" required className="form-control" value={publicProfileForm.contactEmail} onChange={e => setPublicProfileForm(p => ({...p, contactEmail: e.target.value}))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Phone Number *</label>
+                      <input type="tel" required className="form-control" value={publicProfileForm.phoneNumber} onChange={e => setPublicProfileForm(p => ({...p, phoneNumber: e.target.value}))} />
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: "1.5rem" }}>
+                    <label className="form-label text-muted">Profile Picture URL</label>
+                    <input type="url" className="form-control" value={publicProfileForm.profilePictureUrl} onChange={e => setPublicProfileForm(p => ({...p, profilePictureUrl: e.target.value}))} placeholder="https://example.com/my-photo.jpg" />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: "2rem" }}>
+                    <label className="form-label text-muted">Bio / About Me</label>
+                    <textarea className="form-control" rows={6} value={publicProfileForm.bio} onChange={e => setPublicProfileForm(p => ({...p, bio: e.target.value}))} placeholder="Tell buyers about your experience, specialties, and service areas..."></textarea>
+                  </div>
+
+                  <button type="submit" className="btn btn-primary">
+                    <i className="bi bi-save me-2"></i> Save Public Profile
+                  </button>
+
+                </form>
+              </div>
+            </>
+          )}
+
         </main>
       </div>
       <Footer />

@@ -24,11 +24,35 @@ const majorEditDetected = (payload: {
   return Boolean(payload.price || payload.location || payload.description || payload.mediaUrls?.length);
 };
 
+// Pubic profile
+const publicProfileUpdateSchema = z.object({
+  bio: z.string().optional(),
+  // .or(z.literal("")) allows the user to leave the URL blank without triggering a validation error
+  profilePictureUrl: z.string().url("Must be a valid URL").optional().or(z.literal("")), 
+  contactEmail: z.string().email("Must be a valid email"),
+  phoneNumber: z.string().min(1, "Phone number is required"),
+});
+
+// Verification
+const profileUpdateSchema = z.object({
+  fullName: z.string().optional(),
+  contactEmail: z.string().email("Must be a valid email"),
+  phoneNumber: z.string().optional(),
+  licenseNumber: z.string().min(1, "License number is required"),
+  licenseExpirationDate: z.string().optional(),
+  licenseUrl: z.string().url("Must be a valid URL").optional(),
+});
+
+// NEW
 const listingCreateSchema = z.object({
   price: z.number().positive(),
   location: z.string().min(2),
   propertyType: z.string().min(2).optional(),
   description: z.string().min(10),
+  bedrooms: z.number().min(0).optional(),
+  bathrooms: z.number().min(0).optional(),
+  squareFeet: z.number().positive().optional(),
+  status: z.enum(["DRAFT", "PENDING"]).optional(), // Allow drafts
   mediaUrls: z.array(z.string().url()).optional(),
 });
 
@@ -70,6 +94,7 @@ export const createAgentRouter = (): Router => {
   const router = Router();
   router.use(authorizeRole(["AGENT"]));
 
+  // UPDATE the existing verification-status route
   router.get("/verification-status", async (req: AuthenticatedRequest, res) => {
     const user = await userStore.findById(req.user?.sub ?? "");
     if (!user) {
@@ -86,8 +111,82 @@ export const createAgentRouter = (): Router => {
       isActive: user.isActive,
       applicationStatus: latestApplication?.status ?? "PENDING",
       latestApplication,
+      // ADD the user object so the frontend can populate the form
+      user: {
+        email: user.email,
+        contactEmail: user.contactEmail,
+        fullName: user.fullName,
+        phoneNumber: user.phoneNumber,
+        licenseNumber: user.licenseNumber,
+        licenseExpirationDate: user.licenseExpirationDate,
+        bio: user.bio,
+        profilePictureUrl: user.profilePictureUrl 
+      }
     });
   });
+
+  // ADD this new route to handle profile updates
+  router.put("/me/profile", validateBody(profileUpdateSchema), async (req: AuthenticatedRequest, res) => {
+    const user = await userStore.findById(req.user?.sub ?? "");
+    if (!user || user.role !== "AGENT") {
+      res.status(404).json({ message: "Agent not found." });
+      return;
+    }
+
+    // 1. Update the User table
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        fullName: req.body.fullName,
+        contactEmail: req.body.contactEmail ? req.body.contactEmail.toLowerCase() : undefined,
+        phoneNumber: req.body.phoneNumber,
+        licenseNumber: req.body.licenseNumber,
+        licenseExpirationDate: req.body.licenseExpirationDate ? new Date(req.body.licenseExpirationDate) : null,
+        isVerified: false // Require admin to re-verify on profile changes
+      }
+    });
+
+    // 2. Submit a new application document if a URL was provided
+    if (req.body.licenseUrl) {
+      await prisma.agentApplication.create({
+        data: {
+          applicantId: user.id,
+          status: "PENDING",
+          notes: "Profile update submitted via Dashboard",
+          licenseDocs: {
+            create: {
+              fileUrl: req.body.licenseUrl,
+              mimeType: "link/url"
+            }
+          }
+        }
+      });
+    }
+
+    res.status(200).json({ message: "Profile updated successfully." });
+  });
+
+  // NEW
+  router.put("/me/public-profile", validateBody(publicProfileUpdateSchema), async (req: AuthenticatedRequest, res) => {
+    const user = await userStore.findById(req.user?.sub ?? "");
+    if (!user || user.role !== "AGENT") {
+      res.status(404).json({ message: "Agent not found." });
+      return;
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        bio: req.body.bio,
+        profilePictureUrl: req.body.profilePictureUrl || null,
+        contactEmail: req.body.contactEmail.toLowerCase(),
+        phoneNumber: req.body.phoneNumber,
+      }
+    });
+    
+    res.status(200).json({ message: "Public profile updated successfully." });
+  });
+
 
   router.post("/me/application", validateBody(agentApplicationSchema), async (req: AuthenticatedRequest, res) => {
     const user = await userStore.findById(req.user?.sub ?? "");
@@ -134,7 +233,10 @@ export const createAgentRouter = (): Router => {
       location: req.body.location,
       propertyType: req.body.propertyType,
       description: req.body.description,
-      status: "PENDING",
+      bedrooms: req.body.bedrooms,       // <-- NEW
+      bathrooms: req.body.bathrooms,     // <-- NEW
+      squareFeet: req.body.squareFeet,   // <-- NEW
+      status: req.body.status ?? "PENDING", // <-- Allow Draft status
       mediaUrls: req.body.mediaUrls,
     });
     res.status(201).json(listing);
