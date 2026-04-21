@@ -58,6 +58,10 @@ const agentApplicationSchema = z.object({
   ).min(1),
 });
 
+const inquiryStatusSchema = z.object({
+  status: z.enum(["ANSWERED", "RESOLVED"]),
+});
+
 const tourStatusSchema = z.object({
   status: z.enum(["REQUESTED", "CONFIRMED", "DECLINED"]),
 });
@@ -223,6 +227,17 @@ export const createAgentRouter = (): Router => {
         message: req.body.message,
       });
       res.status(201).json(message);
+    } catch (_error: unknown) {
+      res.status(404).json({ message: "Inquiry not found." });
+    }
+  });
+
+  router.patch("/inquiries/:id/status", validateBody(inquiryStatusSchema), async (req: AuthenticatedRequest, res) => {
+    try {
+      await engagementStore.resolveInquiry(
+        asParam(req.params.id), req.user?.sub ?? "", req.body.status,
+      );
+      res.status(200).json({ ok: true });
     } catch (_error: unknown) {
       res.status(404).json({ message: "Inquiry not found." });
     }
