@@ -101,6 +101,7 @@ model PropertyListing {
 model Inquiry {
   id            String          @id @default(cuid())
   message       String
+  status        InquiryStatus   @default(OPEN)
   createdAt     DateTime        @default(now())
   buyerId       String
   listingId     String
@@ -112,6 +113,12 @@ model Inquiry {
   @@index([listingId])
   @@index([createdAt])
   @@index([listingId, createdAt])
+}
+
+enum InquiryStatus {
+  OPEN
+  ANSWERED
+  RESOLVED
 }
 
 model Review {

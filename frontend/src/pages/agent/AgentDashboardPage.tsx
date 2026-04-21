@@ -17,7 +17,7 @@ export const AgentDashboardPage = (): JSX.Element => {
   const [activeSection, setActiveSection] = useState<Section>("overview");
 
   const [listings, setListings] = useState<ListingSummary[]>([]);
-  const [inquiries, setInquiries] = useState<Array<{ id: string; message: string }>>([]);
+  const [inquiries, setInquiries] = useState<Array<{ id: string; message: string; status: string }>>([]);
   const [tourRequests, setTourRequests] = useState<Array<{ id: string; status: string; preferredTime: string }>>([]);
   const [verification, setVerification] = useState<{ status: string; applicationStatus: string } | null>(null);
 
@@ -88,16 +88,29 @@ export const AgentDashboardPage = (): JSX.Element => {
   };
 
   const respondInquiry = async (id: string) => {
-    const msg = inquiryResponses[id]?.trim();
-    if (!msg) return;
-    await agentApi.respondToInquiry(id, msg);
+    const text = inquiryResponses[id]?.trim();
+    if (!text) return;
+    await agentApi.respondToInquiry(id, text);
     setInquiryResponses(prev => ({ ...prev, [id]: "" }));
     flash("✓ Response sent.");
+    void loadAll();
+  };
+
+  const resolveInquiry = async (id: string, status: "ANSWERED" | "RESOLVED") => {
+    await agentApi.resolveInquiry(id, status);
+    flash(`✓ Inquiry marked as ${status.toLowerCase()}.`);
+    void loadAll();
   };
 
   const confirmTour = async (id: string) => {
     await agentApi.updateTourRequest(id, "CONFIRMED");
     flash("✓ Tour confirmed.");
+    void loadAll();
+  };
+
+  const declineTour = async (id: string) => {
+    await agentApi.updateTourRequest(id, "DECLINED");
+    flash("✓ Tour declined.");
     void loadAll();
   };
 
@@ -115,6 +128,22 @@ export const AgentDashboardPage = (): JSX.Element => {
     } catch { flash("✗ Failed to submit."); }
   };
 
+  // Parse contact details out of the structured message the user submitted
+  const parseInquiryMeta = (message: string) => {
+    const match = message.match(/^From: (.+?) \| Phone: (.+?) \| Email: (.+?)\n\n([\s\S]*)$/);
+    if (match) return { name: match[1], phone: match[2], email: match[3], body: match[4] };
+    return { name: null, phone: null, email: null, body: message };
+  };
+
+  // Parse user info from tour request notes if present
+  const parseTourMeta = (tour: { id: string; status: string; preferredTime: string }) => {
+    const date = new Date(tour.preferredTime);
+    return {
+      date: date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }),
+      time: date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+    };
+  };
+
   const stats = {
     active: listings.filter(l => l.status === "APPROVED").length,
     pending: listings.filter(l => l.status === "PENDING").length,
@@ -126,7 +155,7 @@ export const AgentDashboardPage = (): JSX.Element => {
     { key: "overview", label: "Overview", icon: "bi-speedometer2" },
     { key: "listings", label: "My Listings", icon: "bi-house-door", badge: stats.active },
     { key: "create", label: "New Listing", icon: "bi-plus-circle" },
-    { key: "inquiries", label: "Inquiries", icon: "bi-chat-left-dots", badge: inquiries.length },
+    { key: "inquiries", label: "Inquiries", icon: "bi-chat-left-dots", badge: (inquiries.length + tourRequests.length) },
     { key: "profile", label: "Verification", icon: "bi-person-badge" },
   ];
 
@@ -196,7 +225,7 @@ export const AgentDashboardPage = (): JSX.Element => {
                   { label: "Active Listings", value: stats.active, icon: "bi-house-check", color: "var(--success)" },
                   { label: "Pending Review", value: stats.pending, icon: "bi-clock", color: "var(--warning)" },
                   { label: "Sold", value: stats.sold, icon: "bi-bag-check", color: "var(--primary-color)" },
-                  { label: "Inquiries", value: stats.messages, icon: "bi-chat-dots", color: "var(--secondary-color)" },
+                  { label: "Messages & Tour Requests", value: stats.messages, icon: "bi-chat-dots", color: "var(--secondary-color)" },
                 ].map(s => (
                   <div key={s.label} className="card" style={{ padding: "1.5rem", borderLeft: `4px solid ${s.color}` }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -358,43 +387,130 @@ export const AgentDashboardPage = (): JSX.Element => {
             </>
           )}
 
-          {/* INQUIRIES */}
+          {/* INQUIRIES & TOURS */}
           {activeSection === "inquiries" && (
             <>
               <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Inquiries & Tour Requests</h1>
 
-              <h3 style={{ fontWeight: 700, marginBottom: "1rem" }}>Messages</h3>
-              <div className="card" style={{ marginBottom: "2rem" }}>
+              {/* MESSAGES */}
+              <h3 style={{ fontWeight: 700, marginBottom: "1rem" }}>
+                Messages
+                <span style={{ fontSize: "0.85rem", fontWeight: 500, color: "var(--text-light)", marginLeft: "0.75rem" }}>
+                  {inquiries.filter(i => i.status === "OPEN").length} open
+                </span>
+              </h3>
+              <div className="card" style={{ marginBottom: "2.5rem" }}>
                 {inquiries.length === 0 ? (
-                  <p className="text-muted" style={{ padding: "2rem" }}>No inquiries yet.</p>
-                ) : inquiries.map(inq => (
-                  <div key={inq.id} style={{ padding: "1.25rem", borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
-                    <p style={{ fontWeight: 500, marginBottom: "0.75rem" }}>{inq.message}</p>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      <input className="form-control" placeholder="Reply..." style={{ flex: 1 }}
-                        value={inquiryResponses[inq.id] || ""}
-                        onChange={e => setInquiryResponses(prev => ({ ...prev, [inq.id]: e.target.value }))} />
-                      <button className="btn btn-primary" onClick={() => respondInquiry(inq.id)} style={{ flexShrink: 0 }}>Reply</button>
-                    </div>
+                  <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-light)" }}>
+                    <i className="bi bi-chat-left" style={{ fontSize: "2rem", display: "block", marginBottom: "0.75rem" }}></i>
+                    No inquiries yet.
                   </div>
-                ))}
+                ) : inquiries.map(inq => {
+                  const meta = parseInquiryMeta(inq.message);
+                  return (
+                    <div key={inq.id} style={{ padding: "1.5rem", borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
+
+                      {/* Sender info row */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                          <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "linear-gradient(135deg, var(--primary-color), var(--secondary-color))", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 800, fontSize: "1rem", flexShrink: 0 }}>
+                            {(meta.name ?? inq.message)[0].toUpperCase()}
+                          </div>
+                          <div>
+                            {meta.name && <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>{meta.name}</div>}
+                            <div style={{ display: "flex", gap: "1rem", fontSize: "0.8rem", color: "var(--text-light)", marginTop: "0.1rem" }}>
+                              {meta.email && <span><i className="bi bi-envelope me-1" style={{ marginRight: "0.25rem"}}></i>{meta.email}</span>}
+                              {meta.phone && <span><i className="bi bi-telephone me-1" style={{ marginRight: "0.25rem"}}></i>{meta.phone}</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <span className={`badge ${inq.status === "RESOLVED" ? "badge-success" : inq.status === "ANSWERED" ? "badge-warning" : ""}`}>
+                          {inq.status}
+                        </span>
+                      </div>
+
+                      {/* Message body */}
+                      <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--border-radius-sm)", padding: "0.9rem 1rem", marginBottom: "1rem", fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                        {meta.body}
+                      </div>
+
+                      {/* Reply input */}
+                      {inq.status !== "RESOLVED" && (
+                      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                        <input className="form-control" placeholder="Write a reply..." style={{ flex: 1 }}
+                          value={inquiryResponses[inq.id] || ""}
+                          onChange={e => setInquiryResponses(prev => ({ ...prev, [inq.id]: e.target.value }))} />
+                        <button className="btn btn-primary" onClick={() => respondInquiry(inq.id)} style={{ flexShrink: 0 }}>
+                          <i className="bi bi-send me-1"></i>Reply
+                        </button>
+                      </div>
+                      )}
+
+                      {/* Status buttons */}
+                      {inq.status !== "RESOLVED" && (
+                        <>
+                          <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <button className="btn btn-outline" onClick={() => resolveInquiry(inq.id, "ANSWERED")}
+                              style={{ fontSize: "0.8rem", padding: "0.3rem 0.9rem" }}>
+                              <i className="bi bi-check me-1"></i>Mark Answered
+                            </button>
+                            <button className="btn btn-outline" onClick={() => resolveInquiry(inq.id, "RESOLVED")}
+                              disabled={inq.status === "RESOLVED"}
+                              style={{ fontSize: "0.8rem", padding: "0.3rem 0.9rem", color: "var(--success)", borderColor: "var(--success)" }}>
+                              <i className="bi bi-check-all me-1"></i>Resolve
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
-              <h3 style={{ fontWeight: 700, marginBottom: "1rem" }}>Tour Requests</h3>
+              {/* TOUR REQUESTS */}
+              <h3 style={{ fontWeight: 700, marginBottom: "1rem" }}>
+                Tour Requests
+                <span style={{ fontSize: "0.85rem", fontWeight: 500, color: "var(--text-light)", marginLeft: "0.75rem" }}>
+                  {tourRequests.filter(t => t.status === "REQUESTED").length} pending
+                </span>
+              </h3>
               <div className="card">
                 {tourRequests.length === 0 ? (
-                  <p className="text-muted" style={{ padding: "2rem" }}>No tour requests.</p>
-                ) : tourRequests.map(tour => (
-                  <div key={tour.id} style={{ padding: "1.25rem", borderBottom: "1px solid rgba(0,0,0,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{new Date(tour.preferredTime).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
-                      <span className={`badge ${tour.status === "CONFIRMED" ? "badge-success" : "badge-warning"}`}>{tour.status}</span>
-                    </div>
-                    {tour.status === "REQUESTED" && (
-                      <button onClick={() => confirmTour(tour.id)} className="btn btn-primary" style={{ fontSize: "0.85rem" }}>Confirm Tour</button>
-                    )}
+                  <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-light)" }}>
+                    <i className="bi bi-calendar-x" style={{ fontSize: "2rem", display: "block", marginBottom: "0.75rem" }}></i>
+                    No tour requests yet.
                   </div>
-                ))}
+                ) : tourRequests.map(tour => {
+                  const { date, time } = parseTourMeta(tour);
+                  return (
+                    <div key={tour.id} style={{ padding: "1.5rem", borderBottom: "1px solid rgba(0,0,0,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                        <div style={{ width: "48px", height: "48px", borderRadius: "var(--border-radius-sm)", background: "var(--bg-secondary)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <i className="bi bi-calendar3" style={{ color: "var(--primary-color)", fontSize: "1.2rem" }}></i>
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>{date}</div>
+                          <div style={{ fontSize: "0.85rem", color: "var(--text-light)" }}>
+                            <i className="bi bi-clock me-1"></i>{time}
+                          </div>
+                          <span className={`badge mt-1 ${tour.status === "CONFIRMED" ? "badge-success" : tour.status === "DECLINED" ? "badge-danger" : "badge-warning"}`}>
+                            {tour.status}
+                          </span>
+                        </div>
+                      </div>
+                      {tour.status === "REQUESTED" && (
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <button onClick={() => confirmTour(tour.id)} className="btn btn-primary" style={{ fontSize: "0.85rem" }}>
+                            <i className="bi bi-calendar-check me-1"></i>Confirm
+                          </button>
+                          <button onClick={() => declineTour(tour.id)} className="btn btn-outline" style={{ fontSize: "0.85rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>
+                            <i className="bi bi-x me-1"></i>Decline
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
