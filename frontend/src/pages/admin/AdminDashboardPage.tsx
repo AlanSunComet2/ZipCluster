@@ -1,12 +1,88 @@
 import { useEffect, useMemo, useState } from "react";
-import { createAdminApi } from "../../api/admin";
+import {
+  createAdminApi,
+  type AdminBanner,
+  type AdminCategory,
+  type AdminListingDetails,
+  type AdminListingSummary,
+  type AdminListingStatus,
+  type AdminPendingAgent,
+  type AdminUser,
+  type ResetPasswordResponse,
+} from "../../api/admin";
 import { useApiClient } from "../../auth/useApiClient";
 import { Navbar } from "../../components/layout/Navbar";
 import { Footer } from "../../components/layout/Footer";
 
-type User = { id: string; email: string; role: string; isActive: boolean };
-type PendingListing = { id: string; location: string };
-type PendingAgent = { id: string; email?: string };
+type Section =
+  | "overview"
+  | "listings"
+  | "agents"
+  | "users"
+  | "categories"
+  | "content"
+  | "reports";
+
+type ListingFilter = AdminListingStatus | "ALL";
+
+interface Stats {
+  totalUsers: number;
+  totalAgents: number;
+  totalListings: number;
+  pendingListings: number;
+  pendingAgentApplications: number;
+  totalFavorites: number;
+}
+
+const formatDate = (iso: string | null | undefined): string => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "2-digit" });
+};
+
+const formatPrice = (value: number): string =>
+  value.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+const shortId = (id: string): string => (id.length > 10 ? `${id.slice(0, 8)}…` : id);
+
+const SHARED_MODAL_STYLE: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(15, 23, 42, 0.45)",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  zIndex: 50,
+  padding: "1rem",
+};
+
+const MODAL_CARD: React.CSSProperties = {
+  background: "white",
+  borderRadius: "var(--border-radius)",
+  padding: "2rem",
+  maxWidth: "640px",
+  width: "100%",
+  maxHeight: "90vh",
+  overflow: "auto",
+  boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+};
+
+interface Modal {
+  kind:
+    | "rejectAgent"
+    | "requestDocs"
+    | "viewAgent"
+    | "rejectListing"
+    | "approveListing"
+    | "viewListing"
+    | "resetPassword"
+    | "scheduleReport"
+    | "createBanner"
+    | "createCategory"
+    | "createGeo";
+  data?: unknown;
+}
 
 export const AdminDashboardPage = (): JSX.Element => {
   const client = useApiClient();
@@ -14,83 +90,316 @@ export const AdminDashboardPage = (): JSX.Element => {
 
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState("");
-  const [activeSection, setActiveSection] = useState<"overview" | "listings" | "agents" | "users">("overview");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [activeSection, setActiveSection] = useState<Section>("overview");
 
-  const [stats, setStats] = useState<{
-    totalUsers: number; totalAgents: number; totalListings: number;
-    pendingListings: number; pendingAgentApplications: number; totalFavorites: number;
-  } | null>(null);
-  const [pendingListings, setPendingListings] = useState<PendingListing[]>([]);
-  const [pendingAgents, setPendingAgents] = useState<PendingAgent[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [listings, setListings] = useState<AdminListingSummary[]>([]);
+  const [listingFilter, setListingFilter] = useState<ListingFilter>("PENDING");
+  const [pendingAgents, setPendingAgents] = useState<AdminPendingAgent[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [propertyCategories, setPropertyCategories] = useState<AdminCategory[]>([]);
+  const [geoCategories, setGeoCategories] = useState<AdminCategory[]>([]);
+  const [banners, setBanners] = useState<AdminBanner[]>([]);
 
-  const loadAll = async () => {
+  const [modal, setModal] = useState<Modal | null>(null);
+  const [modalBusy, setModalBusy] = useState(false);
+  const [modalError, setModalError] = useState("");
+
+  const [listingDetails, setListingDetails] = useState<AdminListingDetails | null>(null);
+  const [resetPasswordResult, setResetPasswordResult] = useState<
+    (ResetPasswordResponse & { email: string }) | null
+  >(null);
+
+  const flash = (text: string): void => {
+    setMsg(text);
+    setErrorMsg("");
+    window.setTimeout(() => setMsg(""), 4000);
+  };
+  const flashError = (text: string): void => {
+    setErrorMsg(text);
+    window.setTimeout(() => setErrorMsg(""), 6000);
+  };
+
+  const closeModal = (): void => {
+    setModal(null);
+    setModalBusy(false);
+    setModalError("");
+    setListingDetails(null);
+  };
+
+  const loadCore = async (): Promise<void> => {
     setLoading(true);
     try {
-      const [analytics, listings, agents, usersRes] = await Promise.all([
+      const [analytics, agents, usersRes] = await Promise.all([
         adminApi.getAnalyticsOverview(),
-        adminApi.getPendingListings(),
         adminApi.getPendingAgents(),
         adminApi.listUsers(),
       ]);
       setStats(analytics);
-      setPendingListings(listings.items);
       setPendingAgents(agents.items);
       setUsers(usersRes.items);
+    } catch (error: unknown) {
+      flashError(error instanceof Error ? error.message : "Failed to load data.");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { void loadAll(); }, [adminApi]);
-
-  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 4000); };
-
-  const approveListing = async (id: string) => {
-    await adminApi.approveListing(id, "Approved by admin.");
-    setPendingListings(prev => prev.filter(l => l.id !== id));
-    flash("✓ Listing approved and now live.");
-    void loadAll();
-  };
-  const rejectListing = async (id: string) => {
-    await adminApi.rejectListing(id, "Needs revision.");
-    setPendingListings(prev => prev.filter(l => l.id !== id));
-    flash("✓ Listing rejected.");
-    void loadAll();
-  };
-  const approveAgent = async (id: string) => {
-    await adminApi.approveAgent(id);
-    setPendingAgents(prev => prev.filter(a => a.id !== id));
-    flash("✓ Agent application approved.");
-    void loadAll();
-  };
-  const rejectAgent = async (id: string) => {
-    await adminApi.rejectAgent(id, "License verification failed.");
-    setPendingAgents(prev => prev.filter(a => a.id !== id));
-    flash("✓ Agent application rejected.");
-    void loadAll();
-  };
-  const toggleUser = async (id: string, isActive: boolean) => {
-    if (isActive) await adminApi.deactivateUser(id);
-    else await adminApi.reactivateUser(id);
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, isActive: !u.isActive } : u));
-    flash(`✓ User ${isActive ? "deactivated" : "reactivated"}.`);
+  const loadListings = async (filter: ListingFilter): Promise<void> => {
+    try {
+      const res = await adminApi.getListings(filter);
+      setListings(res.items);
+    } catch (error: unknown) {
+      flashError(error instanceof Error ? error.message : "Failed to load listings.");
+    }
   };
 
-  const navItems: { key: typeof activeSection; label: string; icon: string; badge?: number }[] = [
+  const loadCategories = async (): Promise<void> => {
+    try {
+      const [props, geos] = await Promise.all([
+        adminApi.listPropertyCategories(),
+        adminApi.listGeoCategories(),
+      ]);
+      setPropertyCategories(props.items);
+      setGeoCategories(geos.items);
+    } catch (error: unknown) {
+      flashError(error instanceof Error ? error.message : "Failed to load categories.");
+    }
+  };
+
+  const loadBanners = async (): Promise<void> => {
+    try {
+      const res = await adminApi.listBanners();
+      setBanners(res.items);
+    } catch (error: unknown) {
+      flashError(error instanceof Error ? error.message : "Failed to load banners.");
+    }
+  };
+
+  useEffect(() => {
+    void loadCore();
+    void loadListings(listingFilter);
+    void loadCategories();
+    void loadBanners();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminApi]);
+
+  useEffect(() => {
+    void loadListings(listingFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listingFilter]);
+
+  // ----- Listings -----
+  const approveListing = async (id: string, notes: string): Promise<void> => {
+    setModalBusy(true);
+    setModalError("");
+    try {
+      await adminApi.approveListing(id, notes || "Approved by admin.");
+      flash("Listing approved and now live.");
+      closeModal();
+      await Promise.all([loadListings(listingFilter), loadCore()]);
+    } catch (error: unknown) {
+      setModalError(error instanceof Error ? error.message : "Failed to approve listing.");
+    } finally {
+      setModalBusy(false);
+    }
+  };
+  const rejectListing = async (id: string, notes: string): Promise<void> => {
+    setModalBusy(true);
+    setModalError("");
+    try {
+      await adminApi.rejectListing(id, notes);
+      flash("Listing sent back for revision.");
+      closeModal();
+      await Promise.all([loadListings(listingFilter), loadCore()]);
+    } catch (error: unknown) {
+      setModalError(error instanceof Error ? error.message : "Failed to reject listing.");
+    } finally {
+      setModalBusy(false);
+    }
+  };
+  const openListingDetails = async (listing: AdminListingSummary): Promise<void> => {
+    setModal({ kind: "viewListing", data: listing });
+    setListingDetails(null);
+    try {
+      const details = await adminApi.getListingDetails(listing.id);
+      setListingDetails(details);
+    } catch (error: unknown) {
+      setModalError(error instanceof Error ? error.message : "Failed to load listing details.");
+    }
+  };
+
+  // ----- Agents -----
+  const approveAgent = async (id: string): Promise<void> => {
+    try {
+      await adminApi.approveAgent(id);
+      flash("Agent application approved.");
+      await Promise.all([loadCore()]);
+    } catch (error: unknown) {
+      flashError(error instanceof Error ? error.message : "Failed to approve agent.");
+    }
+  };
+  const rejectAgent = async (id: string, notes: string): Promise<void> => {
+    setModalBusy(true);
+    setModalError("");
+    try {
+      await adminApi.rejectAgent(id, notes);
+      flash("Agent application rejected. Applicant has been notified.");
+      closeModal();
+      await Promise.all([loadCore()]);
+    } catch (error: unknown) {
+      setModalError(error instanceof Error ? error.message : "Failed to reject agent.");
+    } finally {
+      setModalBusy(false);
+    }
+  };
+  const requestAgentDocs = async (id: string, message: string): Promise<void> => {
+    setModalBusy(true);
+    setModalError("");
+    try {
+      await adminApi.requestAgentDocuments(id, message);
+      flash("Document request sent to applicant.");
+      closeModal();
+      await loadCore();
+    } catch (error: unknown) {
+      setModalError(error instanceof Error ? error.message : "Failed to send request.");
+    } finally {
+      setModalBusy(false);
+    }
+  };
+
+  // ----- Users -----
+  const toggleUser = async (u: AdminUser): Promise<void> => {
+    try {
+      if (u.isActive) await adminApi.deactivateUser(u.id);
+      else await adminApi.reactivateUser(u.id);
+      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, isActive: !x.isActive } : x));
+      flash(`User ${u.isActive ? "deactivated" : "reactivated"}.`);
+    } catch (error: unknown) {
+      flashError(error instanceof Error ? error.message : "Failed to update user.");
+    }
+  };
+  const resetPassword = async (u: AdminUser): Promise<void> => {
+    setModalBusy(true);
+    setModalError("");
+    try {
+      const res = await adminApi.resetUserPassword(u.id);
+      setResetPasswordResult({ ...res, email: u.email });
+      flash("Password reset link generated.");
+    } catch (error: unknown) {
+      setModalError(error instanceof Error ? error.message : "Failed to reset password.");
+    } finally {
+      setModalBusy(false);
+    }
+  };
+
+  // ----- Categories -----
+  const createPropertyCategory = async (name: string): Promise<void> => {
+    setModalBusy(true);
+    setModalError("");
+    try {
+      await adminApi.createPropertyCategory(name);
+      flash(`Property type "${name}" added.`);
+      closeModal();
+      await loadCategories();
+    } catch (error: unknown) {
+      setModalError(error instanceof Error ? error.message : "Failed to create category.");
+    } finally {
+      setModalBusy(false);
+    }
+  };
+  const createGeoCategory = async (name: string): Promise<void> => {
+    setModalBusy(true);
+    setModalError("");
+    try {
+      await adminApi.createGeoCategory(name);
+      flash(`Location "${name}" added.`);
+      closeModal();
+      await loadCategories();
+    } catch (error: unknown) {
+      setModalError(error instanceof Error ? error.message : "Failed to create location.");
+    } finally {
+      setModalBusy(false);
+    }
+  };
+  const deletePropertyCategory = async (id: string, name: string): Promise<void> => {
+    if (!window.confirm(`Delete property type "${name}"?`)) return;
+    try {
+      await adminApi.deletePropertyCategory(id);
+      flash("Property type deleted.");
+      await loadCategories();
+    } catch (error: unknown) {
+      flashError(error instanceof Error ? error.message : "Failed to delete.");
+    }
+  };
+  const deleteGeoCategory = async (id: string, name: string): Promise<void> => {
+    if (!window.confirm(`Delete location "${name}"?`)) return;
+    try {
+      await adminApi.deleteGeoCategory(id);
+      flash("Location deleted.");
+      await loadCategories();
+    } catch (error: unknown) {
+      flashError(error instanceof Error ? error.message : "Failed to delete.");
+    }
+  };
+
+  // ----- Banners -----
+  const createBanner = async (payload: {
+    title: string;
+    imageUrl: string;
+    ctaText?: string;
+    ctaUrl?: string;
+  }): Promise<void> => {
+    setModalBusy(true);
+    setModalError("");
+    try {
+      await adminApi.createBanner({ ...payload, isActive: true });
+      flash("Banner created.");
+      closeModal();
+      await loadBanners();
+    } catch (error: unknown) {
+      setModalError(error instanceof Error ? error.message : "Failed to create banner.");
+    } finally {
+      setModalBusy(false);
+    }
+  };
+  const toggleBanner = async (banner: AdminBanner): Promise<void> => {
+    try {
+      await adminApi.updateBanner(banner.id, { isActive: !banner.isActive });
+      flash(`Banner ${banner.isActive ? "hidden" : "published"}.`);
+      await loadBanners();
+    } catch (error: unknown) {
+      flashError(error instanceof Error ? error.message : "Failed to update banner.");
+    }
+  };
+  const deleteBanner = async (id: string): Promise<void> => {
+    if (!window.confirm("Delete this banner?")) return;
+    try {
+      await adminApi.deleteBanner(id);
+      flash("Banner deleted.");
+      await loadBanners();
+    } catch (error: unknown) {
+      flashError(error instanceof Error ? error.message : "Failed to delete banner.");
+    }
+  };
+
+  const navItems: { key: Section; label: string; icon: string; badge?: number }[] = [
     { key: "overview", label: "Overview", icon: "bi-speedometer2" },
-    { key: "listings", label: "Pending Listings", icon: "bi-house-check", badge: pendingListings.length },
+    { key: "listings", label: "Moderate Listings", icon: "bi-house-check", badge: stats?.pendingListings },
     { key: "agents", label: "Agent Applications", icon: "bi-person-badge", badge: pendingAgents.length },
     { key: "users", label: "Manage Users", icon: "bi-people" },
+    { key: "categories", label: "Categories & Locations", icon: "bi-tags" },
+    { key: "content", label: "Site Content", icon: "bi-layout-text-window" },
+    { key: "reports", label: "Reports", icon: "bi-bar-chart" },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
       <Navbar />
       <div style={{ display: "flex", flex: 1 }}>
-
         {/* Sidebar */}
-        <nav style={{ width: "220px", background: "white", borderRight: "1px solid rgba(0,0,0,0.06)", padding: "2rem 1rem", flexShrink: 0 }}>
+        <nav style={{ width: "240px", background: "white", borderRight: "1px solid rgba(0,0,0,0.06)", padding: "2rem 1rem", flexShrink: 0 }}>
           <div style={{ marginBottom: "1.5rem", padding: "0 0.5rem" }}>
             <div style={{ fontWeight: 800, fontSize: "1rem" }}>Admin Portal</div>
             <div style={{ fontSize: "0.8rem", color: "var(--text-light)" }}>Platform management</div>
@@ -121,12 +430,13 @@ export const AdminDashboardPage = (): JSX.Element => {
           </ul>
         </nav>
 
-        {/* Main Content */}
+        {/* Main */}
         <main style={{ flex: 1, padding: "2.5rem", background: "var(--bg-primary)", overflowY: "auto" }}>
           {msg && (
-            <div style={{ background: "var(--success)", color: "white", padding: "0.75rem 1.5rem", borderRadius: "var(--border-radius-sm)", marginBottom: "1.5rem", fontWeight: 600 }}>
-              {msg}
-            </div>
+            <div style={{ background: "var(--success)", color: "white", padding: "0.75rem 1.5rem", borderRadius: "var(--border-radius-sm)", marginBottom: "1rem", fontWeight: 600 }}>{msg}</div>
+          )}
+          {errorMsg && (
+            <div style={{ background: "var(--danger,#ef4444)", color: "white", padding: "0.75rem 1.5rem", borderRadius: "var(--border-radius-sm)", marginBottom: "1rem", fontWeight: 600 }}>{errorMsg}</div>
           )}
 
           {/* OVERVIEW */}
@@ -158,30 +468,55 @@ export const AdminDashboardPage = (): JSX.Element => {
             </>
           )}
 
-          {/* PENDING LISTINGS */}
+          {/* LISTINGS */}
           {activeSection === "listings" && (
             <>
-              <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Pending Listing Approvals</h1>
+              <h1 style={{ fontWeight: 800, marginBottom: "1rem" }}>Moderate Property Listings</h1>
+              <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.5rem" }}>
+                {(["PENDING", "APPROVED", "SOLD", "ALL"] as ListingFilter[]).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setListingFilter(f)}
+                    className={listingFilter === f ? "btn btn-primary" : "btn btn-outline"}
+                    style={{ padding: "0.45rem 1.1rem", fontSize: "0.85rem", textTransform: "capitalize" }}
+                  >
+                    {f.toLowerCase()}
+                  </button>
+                ))}
+              </div>
+
               <div className="card" style={{ padding: "0.5rem" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ borderBottom: "2px solid rgba(0,0,0,0.05)" }}>
-                      <th style={{ padding: "1rem", textAlign: "left", color: "var(--text-light)", fontSize: "0.8rem", textTransform: "uppercase" }}>Property</th>
-                      <th style={{ padding: "1rem", textAlign: "right", color: "var(--text-light)", fontSize: "0.8rem", textTransform: "uppercase" }}>Actions</th>
+                      {["Listing ID", "Address", "Price", "Status", "Submitted", "Actions"].map(h => (
+                        <th key={h} style={{ padding: "1rem", textAlign: h === "Actions" ? "right" : "left", color: "var(--text-light)", fontSize: "0.8rem", textTransform: "uppercase" }}>{h}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {pendingListings.length === 0 ? (
-                      <tr><td colSpan={2} style={{ padding: "3rem", textAlign: "center", color: "var(--text-light)" }}>No listings pending approval.</td></tr>
-                    ) : pendingListings.map(listing => (
+                    {listings.length === 0 ? (
+                      <tr><td colSpan={6} style={{ padding: "3rem", textAlign: "center", color: "var(--text-light)" }}>No listings match this filter.</td></tr>
+                    ) : listings.map(listing => (
                       <tr key={listing.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
+                        <td style={{ padding: "1rem", fontFamily: "monospace", fontSize: "0.85rem" }}>{shortId(listing.id)}</td>
                         <td style={{ padding: "1rem" }}>
                           <div style={{ fontWeight: 600 }}>{listing.location}</div>
-                          <div style={{ fontSize: "0.8rem", color: "var(--text-light)" }}>ID: {listing.id}</div>
+                          <div style={{ fontSize: "0.75rem", color: "var(--text-light)" }}>{listing.propertyType || "—"}{listing.zipCode ? ` · ${listing.zipCode}` : ""}</div>
                         </td>
+                        <td style={{ padding: "1rem", fontWeight: 600 }}>{formatPrice(listing.price)}</td>
+                        <td style={{ padding: "1rem" }}>
+                          <span className={`badge ${listing.status === "APPROVED" ? "badge-success" : listing.status === "PENDING" ? "badge-warning" : "badge-primary"}`}>{listing.status}</span>
+                        </td>
+                        <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-light)" }}>{formatDate(listing.createdAt)}</td>
                         <td style={{ padding: "1rem", textAlign: "right" }}>
-                          <button onClick={() => approveListing(listing.id)} className="btn btn-primary" style={{ marginRight: "0.5rem", padding: "0.35rem 1rem", fontSize: "0.85rem" }}>Approve</button>
-                          <button onClick={() => rejectListing(listing.id)} className="btn btn-outline" style={{ padding: "0.35rem 1rem", fontSize: "0.85rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>Reject</button>
+                          <button onClick={() => openListingDetails(listing)} className="btn btn-outline" style={{ marginRight: "0.5rem", padding: "0.35rem 0.85rem", fontSize: "0.8rem" }}>View</button>
+                          {listing.status === "PENDING" && (
+                            <>
+                              <button onClick={() => setModal({ kind: "approveListing", data: listing })} className="btn btn-primary" style={{ marginRight: "0.5rem", padding: "0.35rem 0.85rem", fontSize: "0.8rem" }}>Approve</button>
+                              <button onClick={() => setModal({ kind: "rejectListing", data: listing })} className="btn btn-outline" style={{ padding: "0.35rem 0.85rem", fontSize: "0.8rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>Reject</button>
+                            </>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -199,37 +534,50 @@ export const AdminDashboardPage = (): JSX.Element => {
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ borderBottom: "2px solid rgba(0,0,0,0.05)" }}>
-                      <th style={{ padding: "1rem", textAlign: "left", color: "var(--text-light)", fontSize: "0.8rem", textTransform: "uppercase" }}>Applicant</th>
-                      <th style={{ padding: "1rem", textAlign: "right", color: "var(--text-light)", fontSize: "0.8rem", textTransform: "uppercase" }}>Actions</th>
+                      {["Application ID", "Applicant", "Email", "Submitted", "Status", "Actions"].map(h => (
+                        <th key={h} style={{ padding: "1rem", textAlign: h === "Actions" ? "right" : "left", color: "var(--text-light)", fontSize: "0.8rem", textTransform: "uppercase" }}>{h}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
                     {pendingAgents.length === 0 ? (
-                      <tr><td colSpan={2} style={{ padding: "3rem", textAlign: "center", color: "var(--text-light)" }}>No pending applications.</td></tr>
-                    ) : pendingAgents.map(agent => (
-                      <tr key={agent.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
-                        <td style={{ padding: "1rem" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                            <img src={`https://ui-avatars.com/api/?name=${agent.email || "Agent"}&background=random&color=fff&size=40`} style={{ width: "40px", height: "40px", borderRadius: "50%" }} alt="" />
-                            <div>
-                              <div style={{ fontWeight: 600 }}>{agent.email || "Unknown"}</div>
-                              <span className="badge badge-warning" style={{ fontSize: "0.7rem" }}>Pending Review</span>
+                      <tr><td colSpan={6} style={{ padding: "3rem", textAlign: "center", color: "var(--text-light)" }}>No pending applications.</td></tr>
+                    ) : pendingAgents.map(agent => {
+                      const applicantName = agent.email?.split("@")[0]?.replace(/[._-]/g, " ") || "Applicant";
+                      const submitted = agent.application?.createdAt ?? agent.createdAt;
+                      return (
+                        <tr key={agent.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
+                          <td style={{ padding: "1rem", fontFamily: "monospace", fontSize: "0.8rem" }}>
+                            {agent.application ? shortId(agent.application.id) : <span style={{ color: "var(--text-light)" }}>— no app —</span>}
+                          </td>
+                          <td style={{ padding: "1rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                              <img src={`https://ui-avatars.com/api/?name=${encodeURIComponent(applicantName)}&background=random&color=fff&size=40`} style={{ width: "40px", height: "40px", borderRadius: "50%" }} alt="" />
+                              <div style={{ fontWeight: 600, textTransform: "capitalize" }}>{applicantName}</div>
                             </div>
-                          </div>
-                        </td>
-                        <td style={{ padding: "1rem", textAlign: "right" }}>
-                          <button onClick={() => approveAgent(agent.id)} className="btn btn-primary" style={{ marginRight: "0.5rem", padding: "0.35rem 1rem", fontSize: "0.85rem" }}>Approve</button>
-                          <button onClick={() => rejectAgent(agent.id)} className="btn btn-outline" style={{ padding: "0.35rem 1rem", fontSize: "0.85rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>Reject</button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td style={{ padding: "1rem", fontSize: "0.9rem" }}>{agent.email}</td>
+                          <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-light)" }}>{formatDate(submitted)}</td>
+                          <td style={{ padding: "1rem" }}>
+                            <span className="badge badge-warning" style={{ fontSize: "0.7rem" }}>
+                              {agent.application?.status ?? "NO APPLICATION"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "1rem", textAlign: "right" }}>
+                            <button onClick={() => setModal({ kind: "viewAgent", data: agent })} className="btn btn-outline" style={{ marginRight: "0.5rem", padding: "0.3rem 0.75rem", fontSize: "0.8rem" }}>Review</button>
+                            <button onClick={() => approveAgent(agent.id)} className="btn btn-primary" style={{ marginRight: "0.5rem", padding: "0.3rem 0.75rem", fontSize: "0.8rem" }}>Approve</button>
+                            <button onClick={() => setModal({ kind: "rejectAgent", data: agent })} className="btn btn-outline" style={{ padding: "0.3rem 0.75rem", fontSize: "0.8rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>Reject</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </>
           )}
 
-          {/* MANAGE USERS */}
+          {/* USERS */}
           {activeSection === "users" && (
             <>
               <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Manage Users</h1>
@@ -252,7 +600,7 @@ export const AdminDashboardPage = (): JSX.Element => {
                             <img src={`https://ui-avatars.com/api/?name=${user.email}&background=random&color=fff&size=40`} style={{ width: "40px", height: "40px", borderRadius: "50%" }} alt="" />
                             <div>
                               <div style={{ fontWeight: 600 }}>{user.email}</div>
-                              <div style={{ fontSize: "0.75rem", color: "var(--text-light)" }}>ID: {user.id.slice(0, 8)}...</div>
+                              <div style={{ fontSize: "0.75rem", color: "var(--text-light)" }}>ID: {shortId(user.id)}</div>
                             </div>
                           </div>
                         </td>
@@ -263,8 +611,15 @@ export const AdminDashboardPage = (): JSX.Element => {
                           <span className={`badge ${user.isActive ? "badge-success" : "badge-danger"}`}>{user.isActive ? "Active" : "Suspended"}</span>
                         </td>
                         <td style={{ padding: "1rem", textAlign: "right" }}>
-                          <button onClick={() => toggleUser(user.id, user.isActive)} className="btn btn-outline"
-                            style={{ padding: "0.3rem 0.8rem", fontSize: "0.85rem", color: user.isActive ? "var(--danger,#ef4444)" : "var(--success)", borderColor: user.isActive ? "var(--danger,#ef4444)" : "var(--success)" }}>
+                          <button
+                            onClick={() => { setResetPasswordResult(null); setModal({ kind: "resetPassword", data: user }); }}
+                            className="btn btn-outline"
+                            style={{ marginRight: "0.5rem", padding: "0.3rem 0.75rem", fontSize: "0.8rem" }}
+                          >
+                            Reset Password
+                          </button>
+                          <button onClick={() => toggleUser(user)} className="btn btn-outline"
+                            style={{ padding: "0.3rem 0.8rem", fontSize: "0.8rem", color: user.isActive ? "var(--danger,#ef4444)" : "var(--success)", borderColor: user.isActive ? "var(--danger,#ef4444)" : "var(--success)" }}>
                             {user.isActive ? "Deactivate" : "Reactivate"}
                           </button>
                         </td>
@@ -275,9 +630,473 @@ export const AdminDashboardPage = (): JSX.Element => {
               </div>
             </>
           )}
+
+          {/* CATEGORIES & LOCATIONS */}
+          {activeSection === "categories" && (
+            <>
+              <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Categories & Locations</h1>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "1.5rem" }}>
+                {/* Property Types */}
+                <div className="card" style={{ padding: "1.25rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                    <h3 style={{ fontWeight: 700, margin: 0 }}>Property Types</h3>
+                    <button onClick={() => setModal({ kind: "createCategory" })} className="btn btn-primary" style={{ padding: "0.35rem 0.9rem", fontSize: "0.85rem" }}>+ Add</button>
+                  </div>
+                  {propertyCategories.length === 0 ? (
+                    <p style={{ color: "var(--text-light)", fontSize: "0.9rem" }}>No property types.</p>
+                  ) : (
+                    <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                      {propertyCategories.map(c => (
+                        <li key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.6rem 0", borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
+                          <span style={{ fontWeight: 500 }}>{c.name}</span>
+                          <button onClick={() => deletePropertyCategory(c.id, c.name)} className="btn btn-outline" style={{ padding: "0.25rem 0.7rem", fontSize: "0.75rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>Delete</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Locations */}
+                <div className="card" style={{ padding: "1.25rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+                    <h3 style={{ fontWeight: 700, margin: 0 }}>Locations</h3>
+                    <button onClick={() => setModal({ kind: "createGeo" })} className="btn btn-primary" style={{ padding: "0.35rem 0.9rem", fontSize: "0.85rem" }}>+ Add</button>
+                  </div>
+                  {geoCategories.length === 0 ? (
+                    <p style={{ color: "var(--text-light)", fontSize: "0.9rem" }}>No locations.</p>
+                  ) : (
+                    <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                      {geoCategories.map(c => (
+                        <li key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.6rem 0", borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
+                          <span style={{ fontWeight: 500 }}>{c.name}</span>
+                          <button onClick={() => deleteGeoCategory(c.id, c.name)} className="btn btn-outline" style={{ padding: "0.25rem 0.7rem", fontSize: "0.75rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>Delete</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* SITE CONTENT */}
+          {activeSection === "content" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+                <h1 style={{ fontWeight: 800, margin: 0 }}>Site Content & Banners</h1>
+                <button onClick={() => setModal({ kind: "createBanner" })} className="btn btn-primary" style={{ padding: "0.55rem 1.2rem" }}>+ New Banner</button>
+              </div>
+              {banners.length === 0 ? (
+                <div className="card" style={{ padding: "2rem", textAlign: "center", color: "var(--text-light)" }}>No banners. Create one to feature on the home page.</div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1.25rem" }}>
+                  {banners.map(b => (
+                    <div key={b.id} className="card" style={{ padding: 0, overflow: "hidden" }}>
+                      <img src={b.imageUrl} alt={b.title} style={{ width: "100%", height: "140px", objectFit: "cover" }} />
+                      <div style={{ padding: "1rem" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                          <div style={{ fontWeight: 700 }}>{b.title}</div>
+                          <span className={`badge ${b.isActive ? "badge-success" : "badge-warning"}`}>{b.isActive ? "Live" : "Hidden"}</span>
+                        </div>
+                        {b.ctaText && (
+                          <div style={{ fontSize: "0.8rem", color: "var(--text-light)", marginBottom: "0.75rem" }}>CTA: {b.ctaText}</div>
+                        )}
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <button onClick={() => toggleBanner(b)} className="btn btn-outline" style={{ padding: "0.3rem 0.75rem", fontSize: "0.8rem", flex: 1 }}>{b.isActive ? "Hide" : "Publish"}</button>
+                          <button onClick={() => deleteBanner(b.id)} className="btn btn-outline" style={{ padding: "0.3rem 0.75rem", fontSize: "0.8rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>Delete</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* REPORTS */}
+          {activeSection === "reports" && (
+            <>
+              <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Analytics & Reports</h1>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1.25rem", marginBottom: "2rem" }}>
+                {[
+                  { label: "Approved Listings", value: listings.filter(l => l.status === "APPROVED").length, color: "var(--success)" },
+                  { label: "Pending Listings", value: stats?.pendingListings ?? 0, color: "var(--warning)" },
+                  { label: "Pending Agents", value: stats?.pendingAgentApplications ?? 0, color: "var(--danger,#ef4444)" },
+                  { label: "Total Favorites", value: stats?.totalFavorites ?? 0, color: "#ec4899" },
+                ].map(s => (
+                  <div key={s.label} className="card" style={{ padding: "1.5rem", borderLeft: `4px solid ${s.color}` }}>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-light)", textTransform: "uppercase", fontWeight: 700, marginBottom: "0.5rem" }}>{s.label}</div>
+                    <div style={{ fontSize: "2rem", fontWeight: 800 }}>{s.value}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="card" style={{ padding: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "1.05rem" }}>Scheduled Reports</div>
+                  <div style={{ fontSize: "0.9rem", color: "var(--text-light)" }}>Automate delivery of platform analytics to your email.</div>
+                </div>
+                <button onClick={() => setModal({ kind: "scheduleReport" })} className="btn btn-primary" style={{ padding: "0.55rem 1.2rem" }}>Schedule Report</button>
+              </div>
+            </>
+          )}
         </main>
       </div>
       <Footer />
+
+      {/* MODALS */}
+      {modal && <ModalHost
+        modal={modal}
+        busy={modalBusy}
+        error={modalError}
+        onClose={closeModal}
+        listingDetails={listingDetails}
+        resetPasswordResult={resetPasswordResult}
+        actions={{
+          approveListing,
+          rejectListing,
+          rejectAgent,
+          requestAgentDocs,
+          resetPassword,
+          createPropertyCategory,
+          createGeoCategory,
+          createBanner,
+          scheduleReport: (freq: string) => {
+            flash(`"${freq}" report scheduled. Delivery will begin on the next cycle.`);
+            closeModal();
+          },
+          openRequestDocs: (agent: AdminPendingAgent) => setModal({ kind: "requestDocs", data: agent }),
+        }}
+      />}
     </div>
+  );
+};
+
+// --- Modal Host ---
+interface ModalActions {
+  approveListing: (id: string, notes: string) => Promise<void>;
+  rejectListing: (id: string, notes: string) => Promise<void>;
+  rejectAgent: (id: string, notes: string) => Promise<void>;
+  requestAgentDocs: (id: string, message: string) => Promise<void>;
+  resetPassword: (user: AdminUser) => Promise<void>;
+  createPropertyCategory: (name: string) => Promise<void>;
+  createGeoCategory: (name: string) => Promise<void>;
+  createBanner: (payload: { title: string; imageUrl: string; ctaText?: string; ctaUrl?: string }) => Promise<void>;
+  scheduleReport: (freq: string) => void;
+  openRequestDocs: (agent: AdminPendingAgent) => void;
+}
+
+interface ModalHostProps {
+  modal: Modal;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  actions: ModalActions;
+  listingDetails: AdminListingDetails | null;
+  resetPasswordResult: (ResetPasswordResponse & { email: string }) | null;
+}
+
+const ModalHost = ({ modal, busy, error, onClose, actions, listingDetails, resetPasswordResult }: ModalHostProps): JSX.Element => {
+  return (
+    <div style={SHARED_MODAL_STYLE} onClick={onClose}>
+      <div style={MODAL_CARD} onClick={(e) => e.stopPropagation()}>
+        {modal.kind === "rejectAgent" && <RejectAgentModal agent={modal.data as AdminPendingAgent} busy={busy} error={error} onClose={onClose} onSubmit={actions.rejectAgent} />}
+        {modal.kind === "requestDocs" && <RequestDocsModal agent={modal.data as AdminPendingAgent} busy={busy} error={error} onClose={onClose} onSubmit={actions.requestAgentDocs} />}
+        {modal.kind === "viewAgent" && <ViewAgentModal agent={modal.data as AdminPendingAgent} onClose={onClose} onRequestDocs={actions.openRequestDocs} />}
+        {modal.kind === "rejectListing" && <RejectListingModal listing={modal.data as AdminListingSummary} busy={busy} error={error} onClose={onClose} onSubmit={actions.rejectListing} />}
+        {modal.kind === "approveListing" && <ApproveListingModal listing={modal.data as AdminListingSummary} busy={busy} error={error} onClose={onClose} onSubmit={actions.approveListing} />}
+        {modal.kind === "viewListing" && <ViewListingModal listing={modal.data as AdminListingSummary} details={listingDetails} onClose={onClose} />}
+        {modal.kind === "resetPassword" && <ResetPasswordModal user={modal.data as AdminUser} busy={busy} error={error} result={resetPasswordResult} onClose={onClose} onSubmit={actions.resetPassword} />}
+        {modal.kind === "scheduleReport" && <ScheduleReportModal onClose={onClose} onSubmit={actions.scheduleReport} />}
+        {modal.kind === "createCategory" && <CreateCategoryModal title="Add Property Type" busy={busy} error={error} onClose={onClose} onSubmit={actions.createPropertyCategory} />}
+        {modal.kind === "createGeo" && <CreateCategoryModal title="Add Location" busy={busy} error={error} onClose={onClose} onSubmit={actions.createGeoCategory} />}
+        {modal.kind === "createBanner" && <CreateBannerModal busy={busy} error={error} onClose={onClose} onSubmit={actions.createBanner} />}
+      </div>
+    </div>
+  );
+};
+
+// ---- Individual Modals ----
+
+const ErrorBanner = ({ error }: { error: string }): JSX.Element | null =>
+  error ? (
+    <div style={{ background: "#fee2e2", color: "#991b1b", padding: "0.6rem 0.9rem", borderRadius: "var(--border-radius-sm)", marginBottom: "0.75rem", fontSize: "0.85rem" }}>{error}</div>
+  ) : null;
+
+const ModalTitle = ({ children }: { children: React.ReactNode }): JSX.Element => (
+  <h2 style={{ fontWeight: 800, marginBottom: "1rem" }}>{children}</h2>
+);
+
+const RejectAgentModal = ({ agent, busy, error, onClose, onSubmit }: { agent: AdminPendingAgent; busy: boolean; error: string; onClose: () => void; onSubmit: (id: string, notes: string) => Promise<void> }): JSX.Element => {
+  const [reason, setReason] = useState("");
+  return (
+    <>
+      <ModalTitle>Reject Agent Application</ModalTitle>
+      <p style={{ color: "var(--text-light)", marginBottom: "1rem" }}>Applicant <strong>{agent.email}</strong> will be notified with your reasoning.</p>
+      <ErrorBanner error={error} />
+      <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Rejection reason</label>
+      <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={4} style={{ width: "100%", padding: "0.75rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem", marginBottom: "1rem", fontFamily: "inherit" }} placeholder="e.g. License document is unreadable. Please resubmit a clearer scan." />
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+        <button onClick={onClose} className="btn btn-outline" disabled={busy}>Cancel</button>
+        <button onClick={() => onSubmit(agent.id, reason.trim() || "Application rejected.")} className="btn btn-primary" disabled={busy || reason.trim().length < 3} style={{ background: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>
+          {busy ? "Sending…" : "Send rejection"}
+        </button>
+      </div>
+    </>
+  );
+};
+
+const RequestDocsModal = ({ agent, busy, error, onClose, onSubmit }: { agent: AdminPendingAgent; busy: boolean; error: string; onClose: () => void; onSubmit: (id: string, message: string) => Promise<void> }): JSX.Element => {
+  const [message, setMessage] = useState("Please upload a higher-resolution copy of your license and a recent utility bill.");
+  return (
+    <>
+      <ModalTitle>Request Additional Documents</ModalTitle>
+      <p style={{ color: "var(--text-light)", marginBottom: "1rem" }}>Send a request to <strong>{agent.email}</strong>.</p>
+      <ErrorBanner error={error} />
+      <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={4} style={{ width: "100%", padding: "0.75rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginBottom: "1rem", fontFamily: "inherit" }} />
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+        <button onClick={onClose} className="btn btn-outline" disabled={busy}>Cancel</button>
+        <button onClick={() => onSubmit(agent.id, message.trim())} className="btn btn-primary" disabled={busy || message.trim().length < 3}>
+          {busy ? "Sending…" : "Send request"}
+        </button>
+      </div>
+    </>
+  );
+};
+
+const ViewAgentModal = ({ agent, onClose, onRequestDocs }: { agent: AdminPendingAgent; onClose: () => void; onRequestDocs: (a: AdminPendingAgent) => void }): JSX.Element => {
+  const app = agent.application;
+  return (
+    <>
+      <ModalTitle>Application Review</ModalTitle>
+      <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: "0.5rem 1rem", fontSize: "0.9rem", marginBottom: "1.25rem" }}>
+        <div style={{ color: "var(--text-light)" }}>Application ID</div>
+        <div style={{ fontFamily: "monospace" }}>{app?.id ?? "— not submitted —"}</div>
+        <div style={{ color: "var(--text-light)" }}>Email</div>
+        <div>{agent.email}</div>
+        <div style={{ color: "var(--text-light)" }}>Submitted</div>
+        <div>{formatDate(app?.createdAt ?? agent.createdAt)}</div>
+        <div style={{ color: "var(--text-light)" }}>Status</div>
+        <div><span className="badge badge-warning">{app?.status ?? "NO APPLICATION"}</span></div>
+      </div>
+
+      <div style={{ marginBottom: "1.25rem" }}>
+        <div style={{ fontWeight: 700, marginBottom: "0.5rem" }}>Application Notes</div>
+        <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", padding: "0.75rem", borderRadius: "var(--border-radius-sm)", whiteSpace: "pre-wrap", fontSize: "0.9rem", minHeight: "60px" }}>
+          {app?.notes?.trim() || <span style={{ color: "var(--text-light)" }}>No additional notes provided.</span>}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: "1.5rem" }}>
+        <div style={{ fontWeight: 700, marginBottom: "0.5rem" }}>License Documents</div>
+        {app?.licenseDocs?.length ? (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {app.licenseDocs.map(doc => (
+              <li key={doc.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.5rem 0.75rem", background: "#f9fafb", borderRadius: "var(--border-radius-sm)", border: "1px solid #e5e7eb" }}>
+                <div>
+                  <div style={{ fontWeight: 500, fontSize: "0.9rem" }}>{doc.fileUrl.split("/").pop()}</div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-light)" }}>{doc.mimeType} · uploaded {formatDate(doc.uploadedAt)}</div>
+                </div>
+                <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="btn btn-outline" style={{ padding: "0.25rem 0.75rem", fontSize: "0.8rem" }}>Open</a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div style={{ color: "var(--text-light)", fontSize: "0.9rem" }}>No license documents uploaded.</div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+        <button onClick={() => onRequestDocs(agent)} className="btn btn-outline">Request more documents</button>
+        <button onClick={onClose} className="btn btn-primary">Close</button>
+      </div>
+    </>
+  );
+};
+
+const ApproveListingModal = ({ listing, busy, error, onClose, onSubmit }: { listing: AdminListingSummary; busy: boolean; error: string; onClose: () => void; onSubmit: (id: string, notes: string) => Promise<void> }): JSX.Element => {
+  const [notes, setNotes] = useState("Approved by admin.");
+  return (
+    <>
+      <ModalTitle>Approve Listing</ModalTitle>
+      <p style={{ marginBottom: "1rem", color: "var(--text-light)" }}><strong>{listing.location}</strong> — {formatPrice(listing.price)}</p>
+      <ErrorBanner error={error} />
+      <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Moderation note (optional)</label>
+      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} style={{ width: "100%", padding: "0.75rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem", marginBottom: "1rem", fontFamily: "inherit" }} />
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+        <button onClick={onClose} className="btn btn-outline" disabled={busy}>Cancel</button>
+        <button onClick={() => onSubmit(listing.id, notes.trim())} className="btn btn-primary" disabled={busy}>{busy ? "Approving…" : "Approve"}</button>
+      </div>
+    </>
+  );
+};
+
+const RejectListingModal = ({ listing, busy, error, onClose, onSubmit }: { listing: AdminListingSummary; busy: boolean; error: string; onClose: () => void; onSubmit: (id: string, notes: string) => Promise<void> }): JSX.Element => {
+  const [notes, setNotes] = useState("");
+  return (
+    <>
+      <ModalTitle>Reject / Request Revision</ModalTitle>
+      <p style={{ marginBottom: "1rem", color: "var(--text-light)" }}><strong>{listing.location}</strong> — the agent will receive your notes.</p>
+      <ErrorBanner error={error} />
+      <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Reason / required changes</label>
+      <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} style={{ width: "100%", padding: "0.75rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem", marginBottom: "1rem", fontFamily: "inherit" }} placeholder="e.g. Photos appear watermarked from another listing. Please upload original images." />
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+        <button onClick={onClose} className="btn btn-outline" disabled={busy}>Cancel</button>
+        <button onClick={() => onSubmit(listing.id, notes.trim() || "Listing requires revision.")} className="btn btn-primary" disabled={busy || notes.trim().length < 3} style={{ background: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>{busy ? "Sending…" : "Send back for revision"}</button>
+      </div>
+    </>
+  );
+};
+
+const ViewListingModal = ({ listing, details, onClose }: { listing: AdminListingSummary; details: AdminListingDetails | null; onClose: () => void }): JSX.Element => {
+  const images = details?.mediaUrls ?? listing.mediaUrls;
+  return (
+    <>
+      <ModalTitle>Listing Details</ModalTitle>
+      {images.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "0.5rem", marginBottom: "1rem" }}>
+          {images.map((url, i) => (
+            <img key={i} src={url} alt={`photo ${i + 1}`} style={{ width: "100%", height: "120px", objectFit: "cover", borderRadius: "var(--border-radius-sm)" }} />
+          ))}
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: "0.5rem 1rem", fontSize: "0.9rem", marginBottom: "1.25rem" }}>
+        <div style={{ color: "var(--text-light)" }}>Listing ID</div>
+        <div style={{ fontFamily: "monospace" }}>{listing.id}</div>
+        <div style={{ color: "var(--text-light)" }}>Address</div>
+        <div>{listing.location}{listing.zipCode ? `, ${listing.zipCode}` : ""}</div>
+        <div style={{ color: "var(--text-light)" }}>Price</div>
+        <div style={{ fontWeight: 600 }}>{formatPrice(listing.price)}</div>
+        <div style={{ color: "var(--text-light)" }}>Property Type</div>
+        <div>{listing.propertyType || "—"}</div>
+        <div style={{ color: "var(--text-light)" }}>Status</div>
+        <div><span className={`badge ${listing.status === "APPROVED" ? "badge-success" : listing.status === "PENDING" ? "badge-warning" : "badge-primary"}`}>{listing.status}</span></div>
+        <div style={{ color: "var(--text-light)" }}>Submitted</div>
+        <div>{formatDate(listing.createdAt)}</div>
+        {details?.agent && <>
+          <div style={{ color: "var(--text-light)" }}>Agent</div>
+          <div>{details.agent.email}</div>
+        </>}
+      </div>
+      <div style={{ marginBottom: "1.25rem" }}>
+        <div style={{ fontWeight: 700, marginBottom: "0.5rem" }}>Description</div>
+        <div style={{ background: "#f9fafb", padding: "0.75rem", borderRadius: "var(--border-radius-sm)", fontSize: "0.9rem", whiteSpace: "pre-wrap" }}>{listing.description}</div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={onClose} className="btn btn-primary">Close</button>
+      </div>
+    </>
+  );
+};
+
+const ResetPasswordModal = ({ user, busy, error, result, onClose, onSubmit }: { user: AdminUser; busy: boolean; error: string; result: (ResetPasswordResponse & { email: string }) | null; onClose: () => void; onSubmit: (u: AdminUser) => Promise<void> }): JSX.Element => {
+  return (
+    <>
+      <ModalTitle>Reset Password</ModalTitle>
+      <p style={{ marginBottom: "1rem", color: "var(--text-light)" }}>
+        Generate a one-time password reset link for <strong>{user.email}</strong>. The link expires in 1 hour.
+      </p>
+      <ErrorBanner error={error} />
+      {!result ? (
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+          <button onClick={onClose} className="btn btn-outline" disabled={busy}>Cancel</button>
+          <button onClick={() => onSubmit(user)} className="btn btn-primary" disabled={busy}>{busy ? "Generating…" : "Generate reset link"}</button>
+        </div>
+      ) : (
+        <>
+          <div style={{ background: "#ecfdf5", border: "1px solid #10b981", padding: "1rem", borderRadius: "var(--border-radius-sm)", marginBottom: "1rem" }}>
+            <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>✓ Reset link ready</div>
+            <div style={{ fontSize: "0.85rem", color: "var(--text-light)" }}>Share this link with {result.email}. Expires {formatDate(result.expiresAt)}.</div>
+          </div>
+          <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Reset URL</label>
+          <input readOnly value={result.resetUrl} style={{ width: "100%", padding: "0.5rem 0.75rem", fontFamily: "monospace", fontSize: "0.85rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem", marginBottom: "0.75rem" }} onFocus={(e) => e.currentTarget.select()} />
+          <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Token</label>
+          <input readOnly value={result.resetToken} style={{ width: "100%", padding: "0.5rem 0.75rem", fontFamily: "monospace", fontSize: "0.85rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem", marginBottom: "1rem" }} onFocus={(e) => e.currentTarget.select()} />
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+            <button onClick={() => { void navigator.clipboard?.writeText(result.resetUrl); }} className="btn btn-outline">Copy link</button>
+            <button onClick={onClose} className="btn btn-primary">Done</button>
+          </div>
+        </>
+      )}
+    </>
+  );
+};
+
+const ScheduleReportModal = ({ onClose, onSubmit }: { onClose: () => void; onSubmit: (freq: string) => void }): JSX.Element => {
+  const [freq, setFreq] = useState("Weekly");
+  return (
+    <>
+      <ModalTitle>Schedule Report</ModalTitle>
+      <p style={{ color: "var(--text-light)", marginBottom: "1rem" }}>Select a cadence. Reports will be emailed automatically.</p>
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1.25rem" }}>
+        {["Daily", "Weekly", "Monthly"].map(f => (
+          <button
+            key={f}
+            onClick={() => setFreq(f)}
+            className={freq === f ? "btn btn-primary" : "btn btn-outline"}
+            style={{ flex: 1, padding: "0.6rem" }}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+        <button onClick={onClose} className="btn btn-outline">Cancel</button>
+        <button onClick={() => onSubmit(freq)} className="btn btn-primary">Schedule {freq.toLowerCase()}</button>
+      </div>
+    </>
+  );
+};
+
+const CreateCategoryModal = ({ title, busy, error, onClose, onSubmit }: { title: string; busy: boolean; error: string; onClose: () => void; onSubmit: (name: string) => Promise<void> }): JSX.Element => {
+  const [name, setName] = useState("");
+  return (
+    <>
+      <ModalTitle>{title}</ModalTitle>
+      <ErrorBanner error={error} />
+      <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Name</label>
+      <input value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%", padding: "0.6rem 0.75rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem", marginBottom: "1rem" }} />
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+        <button onClick={onClose} className="btn btn-outline" disabled={busy}>Cancel</button>
+        <button onClick={() => onSubmit(name.trim())} className="btn btn-primary" disabled={busy || name.trim().length < 2}>{busy ? "Saving…" : "Create"}</button>
+      </div>
+    </>
+  );
+};
+
+const CreateBannerModal = ({ busy, error, onClose, onSubmit }: { busy: boolean; error: string; onClose: () => void; onSubmit: (p: { title: string; imageUrl: string; ctaText?: string; ctaUrl?: string }) => Promise<void> }): JSX.Element => {
+  const [title, setTitle] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [ctaText, setCtaText] = useState("");
+  const [ctaUrl, setCtaUrl] = useState("");
+  const canSave = title.trim().length >= 2 && /^https?:\/\//.test(imageUrl);
+  return (
+    <>
+      <ModalTitle>Create Banner</ModalTitle>
+      <ErrorBanner error={error} />
+      <div style={{ display: "grid", gap: "0.75rem", marginBottom: "1rem" }}>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Title
+          <input value={title} onChange={(e) => setTitle(e.target.value)} style={{ width: "100%", padding: "0.6rem 0.75rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem" }} />
+        </label>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Image URL
+          <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://…" style={{ width: "100%", padding: "0.6rem 0.75rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem" }} />
+        </label>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>CTA text (optional)
+          <input value={ctaText} onChange={(e) => setCtaText(e.target.value)} style={{ width: "100%", padding: "0.6rem 0.75rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem" }} />
+        </label>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>CTA URL (optional)
+          <input value={ctaUrl} onChange={(e) => setCtaUrl(e.target.value)} placeholder="https://…" style={{ width: "100%", padding: "0.6rem 0.75rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem" }} />
+        </label>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+        <button onClick={onClose} className="btn btn-outline" disabled={busy}>Cancel</button>
+        <button
+          onClick={() => onSubmit({ title: title.trim(), imageUrl: imageUrl.trim(), ctaText: ctaText.trim() || undefined, ctaUrl: ctaUrl.trim() || undefined })}
+          className="btn btn-primary"
+          disabled={busy || !canSave}
+        >
+          {busy ? "Saving…" : "Create"}
+        </button>
+      </div>
+    </>
   );
 };

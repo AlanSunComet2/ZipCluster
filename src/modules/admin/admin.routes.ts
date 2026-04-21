@@ -4,7 +4,7 @@ import { z } from "zod";
 import { validateBody } from "../../lib/http";
 import { authorizeRole } from "../../middleware/authorizeRole";
 import type { AuthenticatedRequest } from "../../types/auth";
-import { listingStore } from "../listings/listing.store";
+import { listingStore, type ListingStatus } from "../listings/listing.store";
 import { userStore } from "../users/user.store";
 import { prisma } from "../../lib/prisma";
 
@@ -14,6 +14,8 @@ const asParam = (value: string | string[] | undefined): string => {
   }
   return Array.isArray(value) ? value[0] : value;
 };
+
+const LISTING_STATUSES: ListingStatus[] = ["PENDING", "APPROVED", "SOLD"];
 
 export const createAdminRouter = (): Router => {
   const router = Router();
@@ -32,10 +34,49 @@ export const createAdminRouter = (): Router => {
   const moderationSchema = z.object({
     notes: z.string().max(500).optional(),
   });
+  const requestDocsSchema = z.object({
+    message: z.string().min(3).max(500),
+  });
 
   router.get("/agents/pending", async (_req, res) => {
-    const agents = (await userStore.list()).filter((user) => user.role === "AGENT" && !user.isVerified);
-    res.status(200).json({ items: agents });
+    const users = (await userStore.list()).filter(
+      (user) => user.role === "AGENT" && !user.isVerified,
+    );
+    const applications = await prisma.agentApplication.findMany({
+      where: { applicantId: { in: users.map((u) => u.id) } },
+      include: { licenseDocs: true },
+      orderBy: { createdAt: "desc" },
+    });
+    const latestByApplicant = new Map<string, typeof applications[number]>();
+    for (const app of applications) {
+      if (!latestByApplicant.has(app.applicantId)) {
+        latestByApplicant.set(app.applicantId, app);
+      }
+    }
+    const items = users.map((user) => {
+      const app = latestByApplicant.get(user.id);
+      return {
+        id: user.id,
+        email: user.email,
+        createdAt: user.createdAt,
+        application: app
+          ? {
+              id: app.id,
+              status: app.status,
+              notes: app.notes,
+              createdAt: app.createdAt,
+              reviewedAt: app.reviewedAt,
+              licenseDocs: app.licenseDocs.map((doc) => ({
+                id: doc.id,
+                fileUrl: doc.fileUrl,
+                mimeType: doc.mimeType,
+                uploadedAt: doc.uploadedAt,
+              })),
+            }
+          : null,
+      };
+    });
+    res.status(200).json({ items });
   });
 
   router.get("/users", async (_req, res) => {
@@ -76,6 +117,29 @@ export const createAdminRouter = (): Router => {
     res.status(200).json({ message: "Agent rejected and deactivated." });
   });
 
+  router.post("/agents/:id/request-documents", validateBody(requestDocsSchema), async (req: AuthenticatedRequest, res) => {
+    const user = await userStore.findById(asParam(req.params.id));
+    if (!user || user.role !== "AGENT") {
+      res.status(404).json({ message: "Agent not found." });
+      return;
+    }
+    const application = await prisma.agentApplication.findFirst({
+      where: { applicantId: user.id, status: "PENDING" },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!application) {
+      res.status(404).json({ message: "No pending application." });
+      return;
+    }
+    const stamped = `[${new Date().toISOString()}] Admin requested additional documents: ${req.body.message}`;
+    const merged = application.notes ? `${application.notes}\n${stamped}` : stamped;
+    await prisma.agentApplication.update({
+      where: { id: application.id },
+      data: { notes: merged, reviewedById: req.user?.sub, reviewedAt: new Date() },
+    });
+    res.status(200).json({ message: "Document request recorded and sent to the applicant." });
+  });
+
   router.get("/agent-applications/pending", async (_req, res) => {
     const items = await prisma.agentApplication.findMany({
       where: { status: "PENDING" },
@@ -88,9 +152,32 @@ export const createAdminRouter = (): Router => {
     res.status(200).json({ items });
   });
 
+  router.get("/listings", async (req, res) => {
+    const statusParam = String(req.query.status ?? "").toUpperCase();
+    const filters: { status?: ListingStatus } = {};
+    if (LISTING_STATUSES.includes(statusParam as ListingStatus)) {
+      filters.status = statusParam as ListingStatus;
+    }
+    const items = await listingStore.list(filters);
+    res.status(200).json({ items });
+  });
+
   router.get("/listings/pending", async (_req, res) => {
     const pendingListings = await listingStore.list({ status: "PENDING" });
     res.status(200).json({ items: pendingListings });
+  });
+
+  router.get("/listings/:id", async (req, res) => {
+    const listing = await listingStore.findById(asParam(req.params.id));
+    if (!listing) {
+      res.status(404).json({ message: "Listing not found." });
+      return;
+    }
+    const agent = await userStore.findById(listing.agentId);
+    res.status(200).json({
+      ...listing,
+      agent: agent ? { id: agent.id, email: agent.email } : null,
+    });
   });
 
   router.patch("/listings/:id/approve", validateBody(moderationSchema), async (req: AuthenticatedRequest, res) => {
@@ -173,14 +260,24 @@ export const createAdminRouter = (): Router => {
       res.status(404).json({ message: "User not found." });
       return;
     }
+    // Generate a plaintext token for the admin to share. In production this
+    // would be emailed directly to the user; we expose it to the admin UI so
+    // the workflow can be demonstrated end-to-end.
+    const resetToken = crypto.randomBytes(24).toString("hex");
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
     await prisma.passwordResetToken.create({
       data: {
         userId: user.id,
-        tokenHash: `reset-${crypto.randomUUID()}`,
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        tokenHash: resetToken,
+        expiresAt,
       },
     });
-    res.status(202).json({ message: "Password reset workflow initiated." });
+    res.status(202).json({
+      message: "Password reset link generated. Share with the user.",
+      resetToken,
+      expiresAt: expiresAt.toISOString(),
+      resetUrl: `/reset-password?token=${resetToken}`,
+    });
   });
 
   router.post("/property-categories", validateBody(categorySchema), async (req, res) => {

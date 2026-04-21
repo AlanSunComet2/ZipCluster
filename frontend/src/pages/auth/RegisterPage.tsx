@@ -35,7 +35,7 @@ export const RegisterPage = (): JSX.Element => {
           <div className="card shadow-lg" style={{ border: 'none', borderRadius: '1rem', padding: '2rem' }}>
             <div className="text-center mb-4">
               <h2 style={{ fontWeight: 800 }}>Create an Account</h2>
-              <p className="text-muted">Join RealEstate.co today</p>
+              <p className="text-muted">Join ZipCluster today</p>
             </div>
             
             <div className="d-flex justify-content-center mb-4" style={{ gap: '1rem', borderBottom: '2px solid rgba(0,0,0,0.05)', paddingBottom: '1rem' }}>
