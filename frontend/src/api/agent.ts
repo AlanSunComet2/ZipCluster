@@ -6,15 +6,36 @@ export interface AgentListingInput {
   location: string;
   description: string;
   propertyType?: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  squareFeet?: number;
+  status?: "DRAFT" | "PENDING" | "SOLD";
   mediaUrls?: string[];
 }
 
+// Add this interface near the top
+export interface AgentProfileInput {
+  fullName?: string;
+  contactEmail: string;
+  phoneNumber?: string;
+  licenseNumber: string;
+  licenseExpirationDate?: string;
+  licenseUrl?: string;
+}
+
 export const createAgentApi = (client: ApiClient) => ({
-  getVerificationStatus: (): Promise<{ status: "pending" | "approved"; isActive: boolean; applicationStatus: string }> =>
-    client.request<{ status: "pending" | "approved"; isActive: boolean; applicationStatus: string }>(
-      "GET",
-      "/agents/verification-status",
-    ),
+  getVerificationStatus: (): Promise<{ 
+    status: "pending" | "approved"; 
+    isActive: boolean; 
+    applicationStatus: string; 
+    latestApplication?: any;
+    user?: { email: string; contactEmail?: string; fullName?: string; phoneNumber?: string; licenseNumber?: string; licenseExpirationDate?: string } 
+  }> => client.request("GET", "/agents/verification-status"),
+
+  // Add this new method
+  updateProfile: (payload: AgentProfileInput): Promise<{ message: string }> =>
+    client.request("PUT", "/agents/me/profile", payload),
+
   listMyListings: (): Promise<{ items: ListingSummary[] }> =>
     client.request<{ items: ListingSummary[] }>("GET", "/agents/me/listings"),
   createListing: (payload: AgentListingInput): Promise<ListingSummary> =>
