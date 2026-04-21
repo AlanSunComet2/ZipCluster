@@ -218,14 +218,13 @@ export const AgentDashboardPage = (): JSX.Element => {
     void loadAll();
   };
 
-  const updateProfileSubmit = async (e: React.FormEvent) => {
-  const declineTour = async (id: string) => {
+ const declineTour = async (id: string) => {
     await agentApi.updateTourRequest(id, "DECLINED");
     flash("✓ Tour declined.");
     void loadAll();
   };
 
-  const submitApplication = async (e: React.FormEvent) => {
+  const updateProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await agentApi.updateProfile({
@@ -270,11 +269,9 @@ export const AgentDashboardPage = (): JSX.Element => {
     { key: "overview", label: "Overview", icon: "bi-speedometer2" },
     { key: "listings", label: "My Listings", icon: "bi-house-door", badge: stats.active },
     { key: "create", label: "New Listing", icon: "bi-plus-circle" },
-    { key: "inquiries", label: "Inquiries", icon: "bi-chat-left-dots", badge: inquiries.length },
     { key: "profile", label: "Verification", icon: "bi-shield-check" },
     { key: "public-profile", label: "Update Profile", icon: "bi-person-badge" }, // <-- New Item
     { key: "inquiries", label: "Inquiries", icon: "bi-chat-left-dots", badge: (inquiries.length + tourRequests.length) },
-    { key: "profile", label: "Verification", icon: "bi-person-badge" },
   ];
 
   const status = verification?.status?.toUpperCase();
