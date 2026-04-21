@@ -19,6 +19,11 @@ export const Navbar = (): JSX.Element => {
         <ul className="navbar-nav">
           <li><Link to="/" className="nav-link">Buy</Link></li>
           <li><Link to="/agent/public-profile" className="nav-link">Find an Agent</Link></li>
+          {session && (
+            <>
+            <li><Link to="/saved" className="nav-link">Saved Properties</Link></li>
+            </>
+          )}
         </ul>
         <div className="navbar-actions">
           {!session ? (

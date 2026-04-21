@@ -38,10 +38,31 @@ export const SavedPropertiesPage = (): JSX.Element => {
    return (
       <>
          <Navbar />
-         <main className="container my-5" style={{ minHeight: '60vh' }}>
-            <div className="d-flex justify-content-between align-items-center mb-4">
-               <h1 style={{ fontWeight: 800 }}>
-                  <i className="bi bi-heart-fill text-danger me-2" style={{ color: 'var(--danger)' }}></i>
+         <main
+            className="container"
+            style={{
+               minHeight: '60vh',
+               marginTop: '20px',
+               marginBottom: '40px'
+            }}
+         >
+            <div
+               className="d-flex justify-content-between align-items-center"
+               style={{ marginBottom: '25px' }}
+            >
+               <h1
+                  style={{
+                     fontWeight: 800,
+                     fontSize: '1.75rem', // Reduced from default h1
+                     margin: 0,           // Removes browser default spacing
+                     display: 'flex',
+                     alignItems: 'center'
+                  }}
+               >
+                  <i
+                     className="bi bi-heart-fill text-danger"
+                     style={{ marginRight: '12px', fontSize: '1.5rem', color: 'red' }}
+                  ></i>
                   Saved Properties ({savedListings.length})
                </h1>
             </div>
