@@ -106,7 +106,7 @@ export const UserDiscoveryPage = (): JSX.Element => {
             />
           </div>
           <div className="form-group mb-0">
-            <select className="form-control" value={filters.propertyType}
+            <select className="form-control " value={filters.propertyType}
               onChange={e => setFilters(f => ({ ...f, propertyType: e.target.value }))}>
               <option value="">All Property Types</option>
               <option value="House">House</option>
@@ -132,7 +132,7 @@ export const UserDiscoveryPage = (): JSX.Element => {
               <option value="price">Sort by Price</option>
             </select>
           </div>
-          <button className="btn btn-primary" onClick={loadListings}>
+          <button className="btn btn-primary mb-4" onClick={loadListings}>
             <i className="bi bi-search me-2"></i>Search
           </button>
         </div>
