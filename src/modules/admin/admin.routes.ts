@@ -1,5 +1,6 @@
 import { Router } from "express";
 import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { validateBody } from "../../lib/http";
 import { authorizeRole } from "../../middleware/authorizeRole";
@@ -260,11 +261,20 @@ export const createAdminRouter = (): Router => {
       res.status(404).json({ message: "User not found." });
       return;
     }
-    // Generate a plaintext token for the admin to share. In production this
-    // would be emailed directly to the user; we expose it to the admin UI so
-    // the workflow can be demonstrated end-to-end.
-    const resetToken = crypto.randomBytes(24).toString("hex");
+
+    const temporaryPassword = `${crypto.randomBytes(6).toString("base64url")}A1!`;
+    const passwordHash = await bcrypt.hash(temporaryPassword, 10);
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    await userStore.upsert({
+      ...user,
+      passwordHash,
+    });
+
+    // Keep token generation so existing demo flows that reference reset links
+    // continue to work, while also giving admins a guaranteed temporary
+    // password they can hand to the user immediately.
+    const resetToken = crypto.randomBytes(24).toString("hex");
     await prisma.passwordResetToken.create({
       data: {
         userId: user.id,
@@ -273,7 +283,8 @@ export const createAdminRouter = (): Router => {
       },
     });
     res.status(202).json({
-      message: "Password reset link generated. Share with the user.",
+      message: "Temporary password and reset link generated.",
+      temporaryPassword,
       resetToken,
       expiresAt: expiresAt.toISOString(),
       resetUrl: `/reset-password?token=${resetToken}`,

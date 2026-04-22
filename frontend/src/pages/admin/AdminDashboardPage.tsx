@@ -44,7 +44,7 @@ const formatDate = (iso: string | null | undefined): string => {
 const formatPrice = (value: number): string =>
   value.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
-const shortId = (id: string): string => (id.length > 10 ? `${id.slice(0, 8)}…` : id);
+const compactId = (id: string): string => (id.length > 14 ? `${id.slice(0, 6)}…${id.slice(-6)}` : id);
 
 const SHARED_MODAL_STYLE: React.CSSProperties = {
   position: "fixed",
@@ -110,6 +110,7 @@ export const AdminDashboardPage = (): JSX.Element => {
   const [resetPasswordResult, setResetPasswordResult] = useState<
     (ResetPasswordResponse & { email: string }) | null
   >(null);
+  const [expandedUserIds, setExpandedUserIds] = useState<Record<string, boolean>>({});
 
   const flash = (text: string): void => {
     setMsg(text);
@@ -499,7 +500,7 @@ export const AdminDashboardPage = (): JSX.Element => {
                       <tr><td colSpan={6} style={{ padding: "3rem", textAlign: "center", color: "var(--text-light)" }}>No listings match this filter.</td></tr>
                     ) : listings.map(listing => (
                       <tr key={listing.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
-                        <td style={{ padding: "1rem", fontFamily: "monospace", fontSize: "0.85rem" }}>{shortId(listing.id)}</td>
+                        <td style={{ padding: "1rem", fontFamily: "monospace", fontSize: "0.85rem" }}>{compactId(listing.id)}</td>
                         <td style={{ padding: "1rem" }}>
                           <div style={{ fontWeight: 600 }}>{listing.location}</div>
                           <div style={{ fontSize: "0.75rem", color: "var(--text-light)" }}>{listing.propertyType || "—"}{listing.zipCode ? ` · ${listing.zipCode}` : ""}</div>
@@ -548,7 +549,7 @@ export const AdminDashboardPage = (): JSX.Element => {
                       return (
                         <tr key={agent.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
                           <td style={{ padding: "1rem", fontFamily: "monospace", fontSize: "0.8rem" }}>
-                            {agent.application ? shortId(agent.application.id) : <span style={{ color: "var(--text-light)" }}>— no app —</span>}
+                            {agent.application ? compactId(agent.application.id) : <span style={{ color: "var(--text-light)" }}>— no app —</span>}
                           </td>
                           <td style={{ padding: "1rem" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
@@ -600,7 +601,27 @@ export const AdminDashboardPage = (): JSX.Element => {
                             <img src={`https://ui-avatars.com/api/?name=${user.email}&background=random&color=fff&size=40`} style={{ width: "40px", height: "40px", borderRadius: "50%" }} alt="" />
                             <div>
                               <div style={{ fontWeight: 600 }}>{user.email}</div>
-                              <div style={{ fontSize: "0.75rem", color: "var(--text-light)" }}>ID: {shortId(user.id)}</div>
+                              <div style={{ fontSize: "0.75rem", color: "var(--text-light)", display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                                <span style={{ fontFamily: "monospace" }}>
+                                  ID: {expandedUserIds[user.id] ? user.id : compactId(user.id)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedUserIds(prev => ({ ...prev, [user.id]: !prev[user.id] }))}
+                                  className="btn btn-outline"
+                                  style={{ padding: "0.15rem 0.5rem", fontSize: "0.7rem" }}
+                                >
+                                  {expandedUserIds[user.id] ? "Hide ID" : "Show ID"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => { void navigator.clipboard?.writeText(user.id); }}
+                                  className="btn btn-outline"
+                                  style={{ padding: "0.15rem 0.5rem", fontSize: "0.7rem" }}
+                                >
+                                  Copy ID
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -993,25 +1014,28 @@ const ResetPasswordModal = ({ user, busy, error, result, onClose, onSubmit }: { 
     <>
       <ModalTitle>Reset Password</ModalTitle>
       <p style={{ marginBottom: "1rem", color: "var(--text-light)" }}>
-        Generate a one-time password reset link for <strong>{user.email}</strong>. The link expires in 1 hour.
+        Generate a temporary password for <strong>{user.email}</strong>. Share it securely and ask them to change it after login.
       </p>
       <ErrorBanner error={error} />
       {!result ? (
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
           <button onClick={onClose} className="btn btn-outline" disabled={busy}>Cancel</button>
-          <button onClick={() => onSubmit(user)} className="btn btn-primary" disabled={busy}>{busy ? "Generating…" : "Generate reset link"}</button>
+          <button onClick={() => onSubmit(user)} className="btn btn-primary" disabled={busy}>{busy ? "Generating…" : "Generate temporary password"}</button>
         </div>
       ) : (
         <>
           <div style={{ background: "#ecfdf5", border: "1px solid #10b981", padding: "1rem", borderRadius: "var(--border-radius-sm)", marginBottom: "1rem" }}>
-            <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>✓ Reset link ready</div>
-            <div style={{ fontSize: "0.85rem", color: "var(--text-light)" }}>Share this link with {result.email}. Expires {formatDate(result.expiresAt)}.</div>
+            <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>Temporary password generated</div>
+            <div style={{ fontSize: "0.85rem", color: "var(--text-light)" }}>Share this with {result.email}. Expires {formatDate(result.expiresAt)}.</div>
           </div>
+          <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Temporary Password</label>
+          <input readOnly value={result.temporaryPassword} style={{ width: "100%", padding: "0.5rem 0.75rem", fontFamily: "monospace", fontSize: "0.9rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem", marginBottom: "0.75rem" }} onFocus={(e) => e.currentTarget.select()} />
           <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Reset URL</label>
           <input readOnly value={result.resetUrl} style={{ width: "100%", padding: "0.5rem 0.75rem", fontFamily: "monospace", fontSize: "0.85rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem", marginBottom: "0.75rem" }} onFocus={(e) => e.currentTarget.select()} />
           <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Token</label>
           <input readOnly value={result.resetToken} style={{ width: "100%", padding: "0.5rem 0.75rem", fontFamily: "monospace", fontSize: "0.85rem", borderRadius: "var(--border-radius-sm)", border: "1px solid #d1d5db", marginTop: "0.25rem", marginBottom: "1rem" }} onFocus={(e) => e.currentTarget.select()} />
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+            <button onClick={() => { void navigator.clipboard?.writeText(result.temporaryPassword); }} className="btn btn-outline">Copy password</button>
             <button onClick={() => { void navigator.clipboard?.writeText(result.resetUrl); }} className="btn btn-outline">Copy link</button>
             <button onClick={onClose} className="btn btn-primary">Done</button>
           </div>

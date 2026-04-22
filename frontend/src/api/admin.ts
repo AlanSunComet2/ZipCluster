@@ -59,6 +59,7 @@ export interface AdminCategory {
 
 export interface ResetPasswordResponse {
   message: string;
+  temporaryPassword: string;
   resetToken: string;
   resetUrl: string;
   expiresAt: string;
