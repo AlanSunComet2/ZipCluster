@@ -22,6 +22,7 @@ export const Navbar = (): JSX.Element => {
           {session && (
             <>
             <li><Link to="/saved" className="nav-link">Saved Properties</Link></li>
+            <li><Link to="/account" className="nav-link">Account</Link></li>
             </>
           )}
         </ul>

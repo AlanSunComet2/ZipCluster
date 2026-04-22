@@ -31,6 +31,11 @@ export interface AuthTokens {
   refreshToken: string;
 }
 
+export interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+}
+
 // modified
 export interface ListingSummary {
   id: string;

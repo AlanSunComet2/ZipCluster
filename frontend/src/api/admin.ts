@@ -57,6 +57,20 @@ export interface AdminCategory {
   name: string;
 }
 
+export interface AdminListingUpdatePayload {
+  price?: number;
+  location?: string;
+  zipCode?: string;
+  propertyType?: string;
+  description?: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  squareFeet?: number;
+  status?: AdminListingStatus;
+  mediaUrls?: string[];
+  notes?: string;
+}
+
 export interface ResetPasswordResponse {
   message: string;
   temporaryPassword: string;
@@ -84,6 +98,13 @@ export const createAdminApi = (client: ApiClient) => ({
     client.request("PATCH", `/admin/listings/${listingId}/approve`, { notes }),
   rejectListing: (listingId: string, notes?: string): Promise<{ message: string }> =>
     client.request("PATCH", `/admin/listings/${listingId}/reject`, { notes }),
+  updateListing: (
+    listingId: string,
+    payload: AdminListingUpdatePayload,
+  ): Promise<{ message: string; listing: AdminListingSummary | null }> =>
+    client.request("PATCH", `/admin/listings/${listingId}`, payload),
+  deleteListing: (listingId: string, notes?: string): Promise<{ message: string }> =>
+    client.request("DELETE", `/admin/listings/${listingId}`, { confirm: "DELETE", notes }),
   approveAgent: (agentId: string): Promise<{ message: string }> =>
     client.request("PATCH", `/admin/agents/${agentId}/approve`),
   rejectAgent: (agentId: string, notes: string): Promise<{ message: string }> =>

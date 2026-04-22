@@ -6,6 +6,7 @@ import {
   type AdminListingDetails,
   type AdminListingSummary,
   type AdminListingStatus,
+  type AdminListingUpdatePayload,
   type AdminPendingAgent,
   type AdminUser,
   type ResetPasswordResponse,
@@ -13,6 +14,7 @@ import {
 import { useApiClient } from "../../auth/useApiClient";
 import { Navbar } from "../../components/layout/Navbar";
 import { Footer } from "../../components/layout/Footer";
+import { ChangePasswordForm } from "../../components/account/ChangePasswordForm";
 
 type Section =
   | "overview"
@@ -21,7 +23,8 @@ type Section =
   | "users"
   | "categories"
   | "content"
-  | "reports";
+  | "reports"
+  | "security";
 
 type ListingFilter = AdminListingStatus | "ALL";
 
@@ -76,6 +79,8 @@ interface Modal {
     | "rejectListing"
     | "approveListing"
     | "viewListing"
+    | "editListing"
+    | "deleteListing"
     | "resetPassword"
     | "scheduleReport"
     | "createBanner"
@@ -228,6 +233,47 @@ export const AdminDashboardPage = (): JSX.Element => {
       setListingDetails(details);
     } catch (error: unknown) {
       setModalError(error instanceof Error ? error.message : "Failed to load listing details.");
+    }
+  };
+  const openEditListing = async (listing: AdminListingSummary): Promise<void> => {
+    setModal({ kind: "editListing", data: listing });
+    setListingDetails(null);
+    try {
+      const details = await adminApi.getListingDetails(listing.id);
+      setListingDetails(details);
+    } catch (error: unknown) {
+      setModalError(error instanceof Error ? error.message : "Failed to load listing details.");
+    }
+  };
+  const updateListing = async (
+    id: string,
+    payload: AdminListingUpdatePayload,
+  ): Promise<void> => {
+    setModalBusy(true);
+    setModalError("");
+    try {
+      await adminApi.updateListing(id, payload);
+      flash("Listing updated.");
+      closeModal();
+      await Promise.all([loadListings(listingFilter), loadCore()]);
+    } catch (error: unknown) {
+      setModalError(error instanceof Error ? error.message : "Failed to update listing.");
+    } finally {
+      setModalBusy(false);
+    }
+  };
+  const deleteListing = async (id: string, notes: string): Promise<void> => {
+    setModalBusy(true);
+    setModalError("");
+    try {
+      await adminApi.deleteListing(id, notes || undefined);
+      flash("Listing removed.");
+      closeModal();
+      await Promise.all([loadListings(listingFilter), loadCore()]);
+    } catch (error: unknown) {
+      setModalError(error instanceof Error ? error.message : "Failed to remove listing.");
+    } finally {
+      setModalBusy(false);
     }
   };
 
@@ -393,6 +439,7 @@ export const AdminDashboardPage = (): JSX.Element => {
     { key: "categories", label: "Categories & Locations", icon: "bi-tags" },
     { key: "content", label: "Site Content", icon: "bi-layout-text-window" },
     { key: "reports", label: "Reports", icon: "bi-bar-chart" },
+    { key: "security", label: "Account Security", icon: "bi-shield-lock" },
   ];
 
   return (
@@ -512,12 +559,20 @@ export const AdminDashboardPage = (): JSX.Element => {
                         <td style={{ padding: "1rem", fontSize: "0.85rem", color: "var(--text-light)" }}>{formatDate(listing.createdAt)}</td>
                         <td style={{ padding: "1rem", textAlign: "right" }}>
                           <button onClick={() => openListingDetails(listing)} className="btn btn-outline" style={{ marginRight: "0.5rem", padding: "0.35rem 0.85rem", fontSize: "0.8rem" }}>View</button>
+                          <button onClick={() => openEditListing(listing)} className="btn btn-outline" style={{ marginRight: "0.5rem", padding: "0.35rem 0.85rem", fontSize: "0.8rem" }}>Edit</button>
                           {listing.status === "PENDING" && (
                             <>
                               <button onClick={() => setModal({ kind: "approveListing", data: listing })} className="btn btn-primary" style={{ marginRight: "0.5rem", padding: "0.35rem 0.85rem", fontSize: "0.8rem" }}>Approve</button>
-                              <button onClick={() => setModal({ kind: "rejectListing", data: listing })} className="btn btn-outline" style={{ padding: "0.35rem 0.85rem", fontSize: "0.8rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>Reject</button>
+                              <button onClick={() => setModal({ kind: "rejectListing", data: listing })} className="btn btn-outline" style={{ marginRight: "0.5rem", padding: "0.35rem 0.85rem", fontSize: "0.8rem", color: "var(--warning,#f59e0b)", borderColor: "var(--warning,#f59e0b)" }}>Reject</button>
                             </>
                           )}
+                          <button
+                            onClick={() => setModal({ kind: "deleteListing", data: listing })}
+                            className="btn btn-outline"
+                            style={{ padding: "0.35rem 0.85rem", fontSize: "0.8rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}
+                          >
+                            Delete
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -760,6 +815,20 @@ export const AdminDashboardPage = (): JSX.Element => {
               </div>
             </>
           )}
+
+          {/* ACCOUNT SECURITY */}
+          {activeSection === "security" && (
+            <>
+              <h1 style={{ fontWeight: 800, marginBottom: "0.5rem" }}>Account Security</h1>
+              <p style={{ color: "var(--text-light)", marginBottom: "1.5rem" }}>
+                Rotate your administrator password. All other admin sessions will be signed out immediately.
+              </p>
+              <ChangePasswordForm
+                title="Change admin password"
+                description="Updating your password will end every active admin session, including this one."
+              />
+            </>
+          )}
         </main>
       </div>
       <Footer />
@@ -775,6 +844,8 @@ export const AdminDashboardPage = (): JSX.Element => {
         actions={{
           approveListing,
           rejectListing,
+          updateListing,
+          deleteListing,
           rejectAgent,
           requestAgentDocs,
           resetPassword,
@@ -796,6 +867,8 @@ export const AdminDashboardPage = (): JSX.Element => {
 interface ModalActions {
   approveListing: (id: string, notes: string) => Promise<void>;
   rejectListing: (id: string, notes: string) => Promise<void>;
+  updateListing: (id: string, payload: AdminListingUpdatePayload) => Promise<void>;
+  deleteListing: (id: string, notes: string) => Promise<void>;
   rejectAgent: (id: string, notes: string) => Promise<void>;
   requestAgentDocs: (id: string, message: string) => Promise<void>;
   resetPassword: (user: AdminUser) => Promise<void>;
@@ -826,6 +899,8 @@ const ModalHost = ({ modal, busy, error, onClose, actions, listingDetails, reset
         {modal.kind === "rejectListing" && <RejectListingModal listing={modal.data as AdminListingSummary} busy={busy} error={error} onClose={onClose} onSubmit={actions.rejectListing} />}
         {modal.kind === "approveListing" && <ApproveListingModal listing={modal.data as AdminListingSummary} busy={busy} error={error} onClose={onClose} onSubmit={actions.approveListing} />}
         {modal.kind === "viewListing" && <ViewListingModal listing={modal.data as AdminListingSummary} details={listingDetails} onClose={onClose} />}
+        {modal.kind === "editListing" && <EditListingModal listing={modal.data as AdminListingSummary} details={listingDetails} busy={busy} error={error} onClose={onClose} onSubmit={actions.updateListing} />}
+        {modal.kind === "deleteListing" && <DeleteListingModal listing={modal.data as AdminListingSummary} busy={busy} error={error} onClose={onClose} onSubmit={actions.deleteListing} />}
         {modal.kind === "resetPassword" && <ResetPasswordModal user={modal.data as AdminUser} busy={busy} error={error} result={resetPasswordResult} onClose={onClose} onSubmit={actions.resetPassword} />}
         {modal.kind === "scheduleReport" && <ScheduleReportModal onClose={onClose} onSubmit={actions.scheduleReport} />}
         {modal.kind === "createCategory" && <CreateCategoryModal title="Add Property Type" busy={busy} error={error} onClose={onClose} onSubmit={actions.createPropertyCategory} />}
@@ -1004,6 +1079,191 @@ const ViewListingModal = ({ listing, details, onClose }: { listing: AdminListing
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <button onClick={onClose} className="btn btn-primary">Close</button>
+      </div>
+    </>
+  );
+};
+
+const EditListingModal = ({
+  listing,
+  details,
+  busy,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  listing: AdminListingSummary;
+  details: AdminListingDetails | null;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onSubmit: (id: string, payload: AdminListingUpdatePayload) => Promise<void>;
+}): JSX.Element => {
+  const source = details ?? listing;
+  const [price, setPrice] = useState(String(source.price ?? ""));
+  const [location, setLocation] = useState(source.location ?? "");
+  const [zipCode, setZipCode] = useState(source.zipCode ?? "");
+  const [propertyType, setPropertyType] = useState(source.propertyType ?? "");
+  const [description, setDescription] = useState(source.description ?? "");
+  const [status, setStatus] = useState<AdminListingStatus>(
+    (source.status as AdminListingStatus) ?? "PENDING",
+  );
+  const [mediaUrlsText, setMediaUrlsText] = useState(
+    (source.mediaUrls ?? []).join("\n"),
+  );
+  const [notes, setNotes] = useState("");
+
+  useEffect(() => {
+    if (!details) return;
+    setPrice(String(details.price ?? ""));
+    setLocation(details.location ?? "");
+    setZipCode(details.zipCode ?? "");
+    setPropertyType(details.propertyType ?? "");
+    setDescription(details.description ?? "");
+    setStatus((details.status as AdminListingStatus) ?? "PENDING");
+    setMediaUrlsText((details.mediaUrls ?? []).join("\n"));
+  }, [details]);
+
+  const save = (): void => {
+    const payload: AdminListingUpdatePayload = { notes: notes.trim() || undefined };
+    const priceNumber = Number(price);
+    if (!Number.isNaN(priceNumber) && priceNumber > 0 && priceNumber !== listing.price) {
+      payload.price = priceNumber;
+    }
+    if (location.trim() && location.trim() !== listing.location) {
+      payload.location = location.trim();
+    }
+    if (zipCode.trim() !== (listing.zipCode ?? "")) {
+      payload.zipCode = zipCode.trim() || undefined;
+    }
+    if (propertyType.trim() && propertyType.trim() !== (listing.propertyType ?? "")) {
+      payload.propertyType = propertyType.trim();
+    }
+    if (description.trim() && description.trim() !== listing.description) {
+      payload.description = description.trim();
+    }
+    if (status !== listing.status) {
+      payload.status = status;
+    }
+    const urls = mediaUrlsText
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const originalUrls = listing.mediaUrls ?? [];
+    if (urls.join("|") !== originalUrls.join("|")) {
+      payload.mediaUrls = urls;
+    }
+    void onSubmit(listing.id, payload);
+  };
+
+  return (
+    <>
+      <ModalTitle>Edit Listing</ModalTitle>
+      <p style={{ color: "var(--text-light)", marginBottom: "1rem", fontSize: "0.9rem" }}>
+        Editing <strong>{listing.location}</strong>. Changes are audited and immediately visible to the agent.
+      </p>
+      <ErrorBanner error={error} />
+      <div style={{ display: "grid", gap: "0.75rem", marginBottom: "1rem" }}>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Price (USD)
+          <input type="number" min="0" value={price} onChange={(e) => setPrice(e.target.value)} className="form-control" style={{ marginTop: "0.25rem" }} />
+        </label>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Address / location
+          <input value={location} onChange={(e) => setLocation(e.target.value)} className="form-control" style={{ marginTop: "0.25rem" }} />
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+          <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>ZIP code
+            <input value={zipCode} onChange={(e) => setZipCode(e.target.value)} className="form-control" style={{ marginTop: "0.25rem" }} />
+          </label>
+          <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Property type
+            <input value={propertyType} onChange={(e) => setPropertyType(e.target.value)} className="form-control" style={{ marginTop: "0.25rem" }} placeholder="House, Condo, …" />
+          </label>
+        </div>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Status
+          <select value={status} onChange={(e) => setStatus(e.target.value as AdminListingStatus)} className="form-control" style={{ marginTop: "0.25rem" }}>
+            <option value="PENDING">PENDING</option>
+            <option value="APPROVED">APPROVED</option>
+            <option value="SOLD">SOLD</option>
+          </select>
+        </label>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Description
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} className="form-control" style={{ marginTop: "0.25rem", fontFamily: "inherit" }} />
+        </label>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Media URLs (one per line)
+          <textarea value={mediaUrlsText} onChange={(e) => setMediaUrlsText(e.target.value)} rows={3} className="form-control" style={{ marginTop: "0.25rem", fontFamily: "monospace", fontSize: "0.8rem" }} />
+        </label>
+        <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Moderation note (optional)
+          <input value={notes} onChange={(e) => setNotes(e.target.value)} className="form-control" style={{ marginTop: "0.25rem" }} placeholder="Reason for edit (kept in moderation log)" />
+        </label>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+        <button onClick={onClose} className="btn btn-outline" disabled={busy}>Cancel</button>
+        <button onClick={save} className="btn btn-primary" disabled={busy}>
+          {busy ? "Saving…" : "Save changes"}
+        </button>
+      </div>
+    </>
+  );
+};
+
+const DeleteListingModal = ({
+  listing,
+  busy,
+  error,
+  onClose,
+  onSubmit,
+}: {
+  listing: AdminListingSummary;
+  busy: boolean;
+  error: string;
+  onClose: () => void;
+  onSubmit: (id: string, notes: string) => Promise<void>;
+}): JSX.Element => {
+  const [confirmText, setConfirmText] = useState("");
+  const [notes, setNotes] = useState("");
+  const canSubmit = confirmText.trim().toUpperCase() === "DELETE" && !busy;
+  return (
+    <>
+      <ModalTitle>Remove Listing</ModalTitle>
+      <div
+        style={{
+          background: "#fef2f2",
+          border: "1px solid #fecaca",
+          padding: "0.75rem",
+          borderRadius: "var(--border-radius-sm)",
+          color: "#991b1b",
+          fontSize: "0.85rem",
+          marginBottom: "1rem",
+        }}
+      >
+        You are about to remove <strong>{listing.location}</strong> (ID <code>{listing.id}</code>).
+        The listing will no longer appear to buyers or the agent, but historical records
+        (moderation, inquiries) are retained for compliance.
+      </div>
+      <ErrorBanner error={error} />
+      <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>Reason (optional)
+        <input value={notes} onChange={(e) => setNotes(e.target.value)} className="form-control" style={{ marginTop: "0.25rem", marginBottom: "0.75rem" }} placeholder="e.g. Duplicate listing or fraud report." />
+      </label>
+      <label style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+        Type <code>DELETE</code> to confirm
+        <input
+          value={confirmText}
+          onChange={(e) => setConfirmText(e.target.value)}
+          className="form-control"
+          autoComplete="off"
+          style={{ marginTop: "0.25rem", marginBottom: "1rem", fontFamily: "monospace" }}
+          placeholder="DELETE"
+        />
+      </label>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>
+        <button onClick={onClose} className="btn btn-outline" disabled={busy}>Cancel</button>
+        <button
+          onClick={() => onSubmit(listing.id, notes.trim())}
+          className="btn btn-primary"
+          disabled={!canSubmit}
+          style={{ background: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}
+        >
+          {busy ? "Removing…" : "Remove listing"}
+        </button>
       </div>
     </>
   );

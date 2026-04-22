@@ -3,9 +3,18 @@ import { createAgentApi } from "../../api/agent";
 import { useApiClient } from "../../auth/useApiClient";
 import { Navbar } from "../../components/layout/Navbar";
 import { Footer } from "../../components/layout/Footer";
+import { ChangePasswordForm } from "../../components/account/ChangePasswordForm";
 import type { ListingSummary } from "../../api/contracts";
 
-type Section = "overview" | "listings" | "create" | "inquiries" | "profile" | "edit" | "public-profile";
+type Section =
+  | "overview"
+  | "listings"
+  | "create"
+  | "inquiries"
+  | "profile"
+  | "edit"
+  | "public-profile"
+  | "security";
 
 export const AgentDashboardPage = (): JSX.Element => {
   const client = useApiClient();
@@ -256,6 +265,7 @@ export const AgentDashboardPage = (): JSX.Element => {
     { key: "inquiries", label: "Inquiries", icon: "bi-chat-left-dots", badge: (stats.messages + tourRequests.filter(t => t.status === "REQUESTED").length) || undefined },
     { key: "profile", label: "Verification", icon: "bi-shield-check" },
     { key: "public-profile", label: "Update Profile", icon: "bi-person-badge" },
+    { key: "security", label: "Account Security", icon: "bi-shield-lock" },
   ];
 
   return (
@@ -815,6 +825,17 @@ export const AgentDashboardPage = (): JSX.Element => {
                   </button>
                 </form>
               </div>
+            </>
+          )}
+
+          {/* ACCOUNT SECURITY */}
+          {activeSection === "security" && (
+            <>
+              <h1 style={{ fontWeight: 800, marginBottom: "0.5rem" }}>Account Security</h1>
+              <p style={{ color: "var(--text-light)", marginBottom: "1.5rem" }}>
+                Rotate your password whenever you receive a temporary one or suspect a compromise. Changing your password signs out every active session.
+              </p>
+              <ChangePasswordForm />
             </>
           )}
         </main>
