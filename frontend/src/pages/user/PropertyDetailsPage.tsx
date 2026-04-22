@@ -45,6 +45,7 @@ export const PropertyDetailsPage = (): JSX.Element => {
   const [activeImage, setActiveImage] = useState(0);
   const [modal, setModal] = useState<Modal>("none");
   const [copied, setCopied] = useState(false);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
 
   const [tourForm, setTourForm] = useState({ firstName: "", lastName: "", email: "", phone: "", date: "", time: "", notes: "", sendCopy: false });
   const [tourStatus, setTourStatus] = useState("");
@@ -70,7 +71,10 @@ export const PropertyDetailsPage = (): JSX.Element => {
   }, [id, session]);
 
   const toggleSave = async () => {
-    if (!session) return alert("Please log in to save properties");
+    if (!session) {
+      setAuthNotice("Please log in to save properties.");
+      return;
+    }
     if (!id) return;
     try {
       if (isSaved) { await engagementApi.removeFavorite(id); setIsSaved(false); }
@@ -89,7 +93,10 @@ export const PropertyDetailsPage = (): JSX.Element => {
   };
 
   const handleTourSubmit = async () => {
-    if (!session) return alert("Please log in to schedule a tour");
+    if (!session) {
+      setAuthNotice("Please log in to schedule a tour.");
+      return;
+    }
     if (!id) return;
     const { firstName, lastName, email, phone, date, time } = tourForm;
     if (!firstName || !lastName || !email || !phone || !date || !time) {
@@ -103,7 +110,10 @@ export const PropertyDetailsPage = (): JSX.Element => {
   };
 
   const handleContactSubmit = async () => {
-    if (!session) return alert("Please log in to contact the agent");
+    if (!session) {
+      setAuthNotice("Please log in to contact the agent.");
+      return;
+    }
     if (!id) return;
     const { firstName, lastName, email, phone, message } = contactForm;
     if (!firstName || !lastName || !email || !phone || !message.trim()) {
@@ -525,6 +535,37 @@ export const PropertyDetailsPage = (): JSX.Element => {
             <div style={{ display: "flex", gap: "0.75rem" }}>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleContactSubmit}>Send Message</button>
               <button className="btn btn-outline" onClick={closeModal}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Auth Notice Modal */}
+      {authNotice && (
+        <div
+          onClick={() => setAuthNotice(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 1100,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "1rem",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="card"
+            style={{ width: "100%", maxWidth: "420px", padding: "1.5rem" }}
+          >
+            <h3 style={{ fontWeight: 800, margin: "0 0 0.6rem 0" }}>Login required</h3>
+            <p style={{ margin: 0, color: "var(--text-secondary)", lineHeight: 1.6 }}>{authNotice}</p>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.25rem" }}>
+              <button className="btn btn-primary" onClick={() => setAuthNotice(null)}>
+                OK
+              </button>
             </div>
           </div>
         </div>
