@@ -1,4 +1,4 @@
-export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE" | "PUT";
 
 export interface ApiClientConfig {
   baseUrl: string;

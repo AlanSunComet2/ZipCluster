@@ -31,6 +31,7 @@ export interface AuthTokens {
   refreshToken: string;
 }
 
+// modified
 export interface ListingSummary {
   id: string;
   price: number;
@@ -39,9 +40,12 @@ export interface ListingSummary {
   lat: number | null;
   lng: number | null;
   propertyType: string | null;
-  status: "PENDING" | "APPROVED" | "SOLD";
+  status: "PENDING" | "APPROVED" | "SOLD" | "DRAFT";
   description?: string;
   mediaUrls?: string[];
+  bedrooms?: number | null;
+  bathrooms?: number | null;
+  squareFeet?: number | null;
 }
 
 export interface PagedListingsResponse {

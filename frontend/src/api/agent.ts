@@ -1,20 +1,53 @@
 import type { ListingSummary } from "./contracts";
 import { ApiClient } from "./client";
 
+
+export interface AgentPublicProfileInput {
+  bio?: string;
+  profilePictureUrl?: string;
+  contactEmail: string;
+  phoneNumber: string;
+}
+
 export interface AgentListingInput {
   price: number;
   location: string;
   description: string;
   propertyType?: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  squareFeet?: number;
+  status?: "DRAFT" | "PENDING" | "SOLD";
   mediaUrls?: string[];
 }
 
+// Add this interface near the top
+export interface AgentProfileInput {
+  fullName?: string;
+  contactEmail: string;
+  phoneNumber?: string;
+  licenseNumber: string;
+  licenseExpirationDate?: string;
+  licenseUrl?: string;
+}
+
 export const createAgentApi = (client: ApiClient) => ({
-  getVerificationStatus: (): Promise<{ status: "pending" | "approved"; isActive: boolean; applicationStatus: string }> =>
-    client.request<{ status: "pending" | "approved"; isActive: boolean; applicationStatus: string }>(
-      "GET",
-      "/agents/verification-status",
-    ),
+  getVerificationStatus: (): Promise<{ 
+    status: "pending" | "approved"; 
+    isActive: boolean; 
+    applicationStatus: string; 
+    latestApplication?: any;
+    user?: { email: string; contactEmail?: string; fullName?: string; phoneNumber?: string; licenseNumber?: string; licenseExpirationDate?: string;bio?: string; profilePictureUrl?: string; } 
+  }> => client.request("GET", "/agents/verification-status"),
+
+  // Add this new method
+  updateProfile: (payload: AgentProfileInput): Promise<{ message: string }> =>
+    client.request("PUT", "/agents/me/profile", payload),
+
+  // NEW
+  updatePublicProfile: (payload: AgentPublicProfileInput): Promise<{ message: string }> =>
+    client.request("PUT", "/agents/me/public-profile", payload),
+
   listMyListings: (): Promise<{ items: ListingSummary[] }> =>
     client.request<{ items: ListingSummary[] }>("GET", "/agents/me/listings"),
   createListing: (payload: AgentListingInput): Promise<ListingSummary> =>
@@ -29,8 +62,10 @@ export const createAgentApi = (client: ApiClient) => ({
     notes?: string;
     licenseDocuments: Array<{ fileUrl: string; mimeType: string }>;
   }): Promise<{ id: string; status: string }> => client.request("POST", "/agents/me/application", payload),
-  listInquiries: (): Promise<{ items: Array<{ id: string; message: string; threadId: string }> }> =>
+  listInquiries: (): Promise<{ items: Array<{ id: string; message: string; status: string }> }> =>
     client.request("GET", "/agents/inquiries"),
+  resolveInquiry: (inquiryId: string, status: "ANSWERED" | "RESOLVED"): Promise<{ ok: boolean }> =>
+    client.request("PATCH", `/agents/inquiries/${inquiryId}/status`, { status }),
   respondToInquiry: (inquiryId: string, message: string): Promise<{ id: string; content: string }> =>
     client.request("POST", `/agents/inquiries/${inquiryId}/respond`, { message }),
   listTourRequests: (): Promise<{ items: Array<{ id: string; status: string; preferredTime: string }> }> =>

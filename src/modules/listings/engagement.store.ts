@@ -8,6 +8,7 @@ export interface InquiryRecord {
   message: string;
   threadId: string;
   createdAt: Date;
+  status: "OPEN" | "ANSWERED" | "RESOLVED" | null;
 }
 
 export interface TourRequestRecord {
@@ -134,6 +135,7 @@ export const engagementStore = {
       message: result.inquiry.message,
       threadId: result.thread.id,
       createdAt: result.inquiry.createdAt,
+      status: result.inquiry.status,
     };
   },
 
@@ -150,6 +152,7 @@ export const engagementStore = {
       message: inquiry.message,
       threadId: inquiry.messageThread?.id ?? "",
       createdAt: inquiry.createdAt,
+      status: inquiry.status,
     }));
   },
 
@@ -184,6 +187,20 @@ export const engagementStore = {
       content: message.content,
       createdAt: message.createdAt,
     };
+  },
+
+  async resolveInquiry(inquiryId: string, agentId: string, status: "ANSWERED" | "RESOLVED"): Promise<void> {
+    const inquiry = await prisma.inquiry.findUnique({
+      where: { id: inquiryId },
+      include: { listing: { select: { agentId: true } } },
+    });
+    if (!inquiry || inquiry.listing.agentId !== agentId) {
+      throw new Error("Inquiry not found.");
+    }
+    await prisma.inquiry.update({
+      where: { id: inquiryId },
+      data: { status: status as "ANSWERED" | "RESOLVED" },
+    });
   },
 
   async createOrUpdateTourRequest(input: {

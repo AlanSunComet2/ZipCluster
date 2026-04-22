@@ -4,9 +4,8 @@ import { useApiClient } from "../../auth/useApiClient";
 import { Navbar } from "../../components/layout/Navbar";
 import { Footer } from "../../components/layout/Footer";
 import type { ListingSummary } from "../../api/contracts";
-import { Link } from "react-router-dom";
 
-type Section = "overview" | "listings" | "create" | "inquiries" | "profile";
+type Section = "overview" | "listings" | "create" | "inquiries" | "profile" | "edit" | "public-profile";
 
 export const AgentDashboardPage = (): JSX.Element => {
   const client = useApiClient();
@@ -16,17 +15,17 @@ export const AgentDashboardPage = (): JSX.Element => {
   const [msg, setMsg] = useState("");
   const [activeSection, setActiveSection] = useState<Section>("overview");
 
+  const [profileForm, setProfileForm] = useState({
+    fullName: "", email: "", contactEmail: "", phoneNumber: "",
+    licenseNumber: "", licenseExpirationDate: "", licenseUrl: ""
+  });
   const [listings, setListings] = useState<ListingSummary[]>([]);
-  const [inquiries, setInquiries] = useState<Array<{ id: string; message: string }>>([]);
+  const [inquiries, setInquiries] = useState<Array<{ id: string; message: string; status: "OPEN" | "ANSWERED" | "RESOLVED" | null }>>([]);
   const [tourRequests, setTourRequests] = useState<Array<{ id: string; status: string; preferredTime: string }>>([]);
   const [verification, setVerification] = useState<{ status: string; applicationStatus: string } | null>(null);
-
-  // Profile form
-  const [docUrl, setDocUrl] = useState("");
-
-  // Create listing form
-  const [newListing, setNewListing] = useState({ price: "", location: "", propertyType: "House", description: "", mediaUrls: "" });
-
+  const [publicProfileForm, setPublicProfileForm] = useState({ bio: "", profilePictureUrl: "", contactEmail: "", phoneNumber: "" });
+  const [newListing, setNewListing] = useState({ price: "", location: "", propertyType: "House", description: "", mediaUrls: "", bedrooms: "", bathrooms: "", squareFeet: "" });
+  const [editListing, setEditListing] = useState<any>(null);
   const [inquiryResponses, setInquiryResponses] = useState<Record<string, string>>({});
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 4000); };
@@ -41,9 +40,28 @@ export const AgentDashboardPage = (): JSX.Element => {
         agentApi.getVerificationStatus(),
       ]);
       setListings(listingsRes.items);
-      setInquiries(inquiriesRes.items);
+      setInquiries(inquiriesRes.items.map(i => ({ ...i, status: i.status as "OPEN" | "ANSWERED" | "RESOLVED" | null })));
       setTourRequests(toursRes.items);
       setVerification(verRes);
+      if (verRes.user) {
+        setProfileForm({
+          fullName: "",
+          email: verRes.user.email || "", // Keep the login email populated for the locked field
+          contactEmail: "",
+          phoneNumber: "",
+          licenseNumber: "",
+          licenseExpirationDate: "",
+          licenseUrl: ""
+        });
+
+        // Add this to pre-fill the Public Profile tab:
+        setPublicProfileForm({
+          bio: verRes.user.bio || "",
+          profilePictureUrl: verRes.user.profilePictureUrl || "",
+          contactEmail: verRes.user.contactEmail || "",
+          phoneNumber: verRes.user.phoneNumber || ""
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -51,7 +69,23 @@ export const AgentDashboardPage = (): JSX.Element => {
 
   useEffect(() => { void loadAll(); }, [agentApi]);
 
-  const createListing = async (e: React.FormEvent) => {
+  const updatePublicProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await agentApi.updatePublicProfile({
+        bio: publicProfileForm.bio,
+        profilePictureUrl: publicProfileForm.profilePictureUrl,
+        contactEmail: publicProfileForm.contactEmail,
+        phoneNumber: publicProfileForm.phoneNumber,
+      });
+      flash("✓ Public profile updated successfully!");
+      void loadAll();
+    } catch {
+      flash("✗ Failed to update public profile. Ensure URLs and emails are valid.");
+    }
+  };
+
+  const createListing = async (e: React.FormEvent, statusToSave: "DRAFT" | "PENDING") => {
     e.preventDefault();
     try {
       await agentApi.createListing({
@@ -59,13 +93,63 @@ export const AgentDashboardPage = (): JSX.Element => {
         location: newListing.location,
         propertyType: newListing.propertyType,
         description: newListing.description,
+        bedrooms: newListing.bedrooms ? Number(newListing.bedrooms) : undefined,
+        bathrooms: newListing.bathrooms ? Number(newListing.bathrooms) : undefined,
+        squareFeet: newListing.squareFeet ? Number(newListing.squareFeet) : undefined,
+        status: statusToSave,
         mediaUrls: newListing.mediaUrls.split(",").map(u => u.trim()).filter(Boolean),
       });
-      setNewListing({ price: "", location: "", propertyType: "House", description: "", mediaUrls: "" });
-      flash("✓ Listing submitted for admin review.");
+      setNewListing({ price: "", location: "", propertyType: "House", description: "", mediaUrls: "", bedrooms: "", bathrooms: "", squareFeet: "" });
+      flash(statusToSave === "DRAFT" ? "✓ Draft saved successfully." : "✓ Listing submitted for admin review.");
       setActiveSection("listings");
       void loadAll();
     } catch { flash("✗ Failed to create listing."); }
+  };
+
+  const startEditing = (listing: any) => {
+    setEditListing({
+      id: listing.id,
+      price: listing.price.toString(),
+      location: listing.location,
+      propertyType: listing.propertyType || "House",
+      description: listing.description || "",
+      bedrooms: listing.bedrooms?.toString() || "",
+      bathrooms: listing.bathrooms?.toString() || "",
+      squareFeet: listing.squareFeet?.toString() || "",
+      mediaUrls: listing.mediaUrls?.join(", ") || "",
+      status: listing.status,
+    });
+    setActiveSection("edit");
+  };
+
+  const submitEdit = async (e: React.FormEvent, statusToSave?: "DRAFT" | "PENDING") => {
+    e.preventDefault();
+    if (!editListing) return;
+    try {
+      const payload: any = {
+        price: Number(editListing.price),
+        location: editListing.location,
+        propertyType: editListing.propertyType,
+        description: editListing.description,
+        bedrooms: editListing.bedrooms ? Number(editListing.bedrooms) : undefined,
+        bathrooms: editListing.bathrooms ? Number(editListing.bathrooms) : undefined,
+        squareFeet: editListing.squareFeet ? Number(editListing.squareFeet) : undefined,
+        mediaUrls: editListing.mediaUrls.split(",").map((u: string) => u.trim()).filter(Boolean),
+      };
+      if (statusToSave) payload.status = statusToSave;
+      await agentApi.updateListing(editListing.id, payload);
+      setEditListing(null);
+      flash("✓ Listing updated successfully. (Major edits may require re-approval)");
+      setActiveSection("listings");
+      void loadAll();
+    } catch {
+      flash("✗ Failed to update listing.");
+    }
+  };
+
+  const toggleSold = (listing: ListingSummary) => {
+    if (listing.status === "PENDING") return;
+    if (listing.status === "SOLD") { markUnsold(listing); } else { markSold(listing); }
   };
 
   const markSold = async (listing: ListingSummary) => {
@@ -80,6 +164,16 @@ export const AgentDashboardPage = (): JSX.Element => {
     void loadAll();
   };
 
+  const submitDraft = async (listing: ListingSummary) => {
+    try {
+      await agentApi.updateListing(listing.id, { status: "PENDING" });
+      flash("✓ Draft submitted for admin review.");
+      void loadAll();
+    } catch {
+      flash("✗ Failed to submit draft.");
+    }
+  };
+
   const deleteListing = async (id: string) => {
     if (!confirm("Delete this listing?")) return;
     await agentApi.deleteListing(id);
@@ -88,11 +182,18 @@ export const AgentDashboardPage = (): JSX.Element => {
   };
 
   const respondInquiry = async (id: string) => {
-    const msg = inquiryResponses[id]?.trim();
-    if (!msg) return;
-    await agentApi.respondToInquiry(id, msg);
+    const text = inquiryResponses[id]?.trim();
+    if (!text) return;
+    await agentApi.respondToInquiry(id, text);
     setInquiryResponses(prev => ({ ...prev, [id]: "" }));
     flash("✓ Response sent.");
+    void loadAll();
+  };
+
+  const resolveInquiry = async (id: string, newStatus: "ANSWERED" | "RESOLVED") => {
+    await agentApi.resolveInquiry(id, newStatus);
+    flash(`✓ Inquiry marked as ${newStatus.toLowerCase()}.`);
+    void loadAll();
   };
 
   const confirmTour = async (id: string) => {
@@ -101,46 +202,61 @@ export const AgentDashboardPage = (): JSX.Element => {
     void loadAll();
   };
 
-  const submitApplication = async (e: React.FormEvent) => {
+  const declineTour = async (id: string) => {
+    await agentApi.updateTourRequest(id, "DECLINED");
+    flash("✓ Tour declined.");
+    void loadAll();
+  };
+
+  const updateProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!docUrl.trim()) return;
     try {
-      await agentApi.submitApplication({
-        notes: "Submitted from agent dashboard",
-        licenseDocuments: [{ fileUrl: docUrl.trim(), mimeType: "application/pdf" }],
+      await agentApi.updateProfile({
+        fullName: profileForm.fullName,
+        contactEmail: profileForm.contactEmail,
+        phoneNumber: profileForm.phoneNumber,
+        licenseNumber: profileForm.licenseNumber,
+        licenseExpirationDate: profileForm.licenseExpirationDate ? new Date(profileForm.licenseExpirationDate).toISOString() : undefined,
+        licenseUrl: profileForm.licenseUrl,
       });
-      setDocUrl("");
-      flash("✓ Application submitted for review!");
+      flash("✓ Profile updated and license submitted for review!");
       void loadAll();
-    } catch { flash("✗ Failed to submit."); }
+    } catch {
+      flash("✗ Failed to update profile. Please ensure all fields are correct.");
+    }
+  };
+
+  const parseInquiryMeta = (message: string) => {
+    const match = message.match(/^From: (.+?) \| Phone: (.+?) \| Email: (.+?)\n\n([\s\S]*)$/);
+    if (match) return { name: match[1], phone: match[2], email: match[3], body: match[4] };
+    return { name: null, phone: null, email: null, body: message };
+  };
+
+  const parseTourMeta = (tour: { id: string; status: string; preferredTime: string }) => {
+    const date = new Date(tour.preferredTime);
+    return {
+      date: date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }),
+      time: date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }),
+    };
   };
 
   const stats = {
     active: listings.filter(l => l.status === "APPROVED").length,
     pending: listings.filter(l => l.status === "PENDING").length,
     sold: listings.filter(l => l.status === "SOLD").length,
-    messages: inquiries.length,
+    messages: inquiries.filter(i => i.status === "OPEN" || i.status === null).length,
   };
+
+  const verStatus = verification?.status?.toUpperCase();
 
   const navItems: { key: Section; label: string; icon: string; badge?: number }[] = [
     { key: "overview", label: "Overview", icon: "bi-speedometer2" },
-    { key: "listings", label: "My Listings", icon: "bi-house-door", badge: stats.active },
+    { key: "listings", label: "My Listings", icon: "bi-house-door", badge: stats.active || undefined },
     { key: "create", label: "New Listing", icon: "bi-plus-circle" },
-    { key: "inquiries", label: "Inquiries", icon: "bi-chat-left-dots", badge: inquiries.length },
-    { key: "profile", label: "Verification", icon: "bi-person-badge" },
+    { key: "inquiries", label: "Inquiries", icon: "bi-chat-left-dots", badge: (stats.messages + tourRequests.filter(t => t.status === "REQUESTED").length) || undefined },
+    { key: "profile", label: "Verification", icon: "bi-shield-check" },
+    { key: "public-profile", label: "Update Profile", icon: "bi-person-badge" },
   ];
-
-  const status = verification?.status?.toUpperCase();
-
-  const toggleSold = (listing: ListingSummary) => {
-    if (listing.status === "PENDING") return;
-
-    if (listing.status === "SOLD") {
-      markUnsold(listing);
-    } else {
-      markSold(listing);
-    }
-  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
@@ -196,7 +312,7 @@ export const AgentDashboardPage = (): JSX.Element => {
                   { label: "Active Listings", value: stats.active, icon: "bi-house-check", color: "var(--success)" },
                   { label: "Pending Review", value: stats.pending, icon: "bi-clock", color: "var(--warning)" },
                   { label: "Sold", value: stats.sold, icon: "bi-bag-check", color: "var(--primary-color)" },
-                  { label: "Inquiries", value: stats.messages, icon: "bi-chat-dots", color: "var(--secondary-color)" },
+                  { label: "Open Inquiries", value: stats.messages, icon: "bi-chat-dots", color: "var(--secondary-color)" },
                 ].map(s => (
                   <div key={s.label} className="card" style={{ padding: "1.5rem", borderLeft: `4px solid ${s.color}` }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -210,8 +326,7 @@ export const AgentDashboardPage = (): JSX.Element => {
                 ))}
               </div>
 
-              {/* Verification status callout */}
-              {verification && verification.status !== "VERIFIED" && (
+              {verification && verStatus !== "VERIFIED" && verStatus !== "APPROVED" && (
                 <div style={{ background: "linear-gradient(135deg, var(--primary-color), var(--secondary-color))", borderRadius: "var(--border-radius-md)", padding: "2rem", color: "white", marginBottom: "2rem" }}>
                   <h3 style={{ color: "white", fontWeight: 800, marginBottom: "0.5rem" }}>
                     <i className="bi bi-shield-exclamation me-2"></i>Verification Required
@@ -226,17 +341,25 @@ export const AgentDashboardPage = (): JSX.Element => {
                 </div>
               )}
 
-              {/* Recent inquiries preview */}
               <div className="card" style={{ padding: "1.5rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
                   <h4 style={{ margin: 0, fontWeight: 800 }}>Recent Inquiries</h4>
                   <button onClick={() => setActiveSection("inquiries")} style={{ background: "none", border: "none", color: "var(--primary-color)", cursor: "pointer", fontWeight: 600, fontFamily: "inherit" }}>View All →</button>
                 </div>
-                {inquiries.length === 0 ? <p className="text-muted">No inquiries yet.</p> : inquiries.slice(0, 3).map(inq => (
-                  <div key={inq.id} style={{ padding: "1rem", border: "1px solid rgba(0,0,0,0.05)", borderRadius: "8px", marginBottom: "0.5rem" }}>
-                    <p style={{ margin: 0, color: "var(--text-secondary)" }}>{inq.message}</p>
-                  </div>
-                ))}
+                {inquiries.length === 0 ? <p className="text-muted">No inquiries yet.</p> : inquiries.slice(0, 3).map(inq => {
+                  const meta = parseInquiryMeta(inq.message);
+                  return (
+                    <div key={inq.id} style={{ padding: "1rem", border: "1px solid rgba(0,0,0,0.05)", borderRadius: "8px", marginBottom: "0.5rem", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div>
+                        {meta.name && <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{meta.name}</div>}
+                        <p style={{ margin: 0, color: "var(--text-secondary)", fontSize: "0.85rem" }}>{meta.body}</p>
+                      </div>
+                      <span className={`badge ${inq.status === "RESOLVED" ? "badge-success" : inq.status === "ANSWERED" ? "badge-warning" : ""}`} style={{ flexShrink: 0, marginLeft: "1rem" }}>
+                        {inq.status ?? "OPEN"}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
@@ -275,35 +398,26 @@ export const AgentDashboardPage = (): JSX.Element => {
                         </td>
                         <td style={{ padding: "1rem", fontWeight: 700 }}>${listing.price.toLocaleString()}</td>
                         <td style={{ padding: "1rem" }}>
-                          <span className={`badge ${listing.status === "APPROVED" ? "badge-success" : listing.status === "PENDING" ? "badge-warning" : "badge-danger"}`}>{listing.status}</span>
+                          <span className={`badge ${listing.status === "APPROVED" ? "badge-success" : listing.status === "SOLD" ? "badge-danger" : listing.status === "DRAFT" ? "" : "badge-warning"}`}
+                            style={listing.status === "DRAFT" ? { background: "#6b7280", color: "white" } : {}}>
+                            {listing.status}
+                          </span>
                         </td>
                         <td style={{ padding: "1rem", textAlign: "right" }}>
-                          {listing.status !== "PENDING" && (
-                            <>
-                              <button
-                                onClick={() => toggleSold(listing)}
-                                className="btn btn-outline"
-                                style={{
-                                  padding: "0.3rem 0.8rem",
-                                  fontSize: "0.8rem",
-                                  marginRight: "0.5rem"
-                                }}
-                              >
-                                {listing.status === "SOLD" ? "Mark Unsold" : "Mark Sold"}
-                              </button>
-                            </>
+                          {listing.status === "DRAFT" && (
+                            <button onClick={() => submitDraft(listing)} className="btn btn-primary" style={{ padding: "0.3rem 0.8rem", fontSize: "0.8rem", marginRight: "0.5rem" }}>
+                              Submit for Review
+                            </button>
                           )}
-
-                          <button
-                            onClick={() => deleteListing(listing.id)}
-                            className="btn btn-outline"
-                            style={{
-                              padding: "0.3rem 0.8rem",
-                              fontSize: "0.8rem",
-                              color: "var(--danger,#ef4444)",
-                              borderColor: "var(--danger,#ef4444)"
-                            }}
-                          >
+                          {(listing.status === "APPROVED" || listing.status === "SOLD") && (
+                            <button onClick={() => toggleSold(listing)} className="btn btn-outline" style={{ padding: "0.3rem 0.8rem", fontSize: "0.8rem", marginRight: "0.5rem" }}>
+                              {listing.status === "SOLD" ? "Mark Unsold" : "Mark Sold"}
+                            </button>
+                          )}
+                          <button onClick={() => startEditing(listing)} className="btn btn-outline" style={{ padding: "0.3rem 0.8rem", fontSize: "0.8rem", marginRight: "0.5rem", color: "var(--primary-color)", borderColor: "var(--primary-color)" }}>
+                            Edit
+                          </button>
+                          <button onClick={() => deleteListing(listing.id)} className="btn btn-outline" style={{ padding: "0.3rem 0.8rem", fontSize: "0.8rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>
                             Delete
                           </button>
                         </td>
@@ -319,82 +433,258 @@ export const AgentDashboardPage = (): JSX.Element => {
           {activeSection === "create" && (
             <>
               <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Create New Listing</h1>
-              <div className="card" style={{ padding: "2rem", maxWidth: "680px" }}>
-                <form onSubmit={createListing}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
+              <div className="card" style={{ padding: "2rem", maxWidth: "800px" }}>
+                <form>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
                     <div className="form-group">
-                      <label className="form-label text-muted">Location / Address</label>
+                      <label className="form-label text-muted">Location / Address *</label>
                       <input className="form-control" required placeholder="123 Main St, Austin, TX"
                         value={newListing.location} onChange={e => setNewListing(n => ({ ...n, location: e.target.value }))} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label text-muted">Price (USD)</label>
+                      <label className="form-label text-muted">Price (USD) *</label>
                       <input className="form-control" type="number" required min="1" placeholder="500000"
                         value={newListing.price} onChange={e => setNewListing(n => ({ ...n, price: e.target.value }))} />
                     </div>
                   </div>
-                  <div className="form-group" style={{ marginBottom: "1.5rem" }}>
-                    <label className="form-label text-muted">Property Type</label>
-                    <select className="form-control" value={newListing.propertyType} onChange={e => setNewListing(n => ({ ...n, propertyType: e.target.value }))}>
-                      {["House", "Condo", "Townhouse", "Land"].map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Property Type</label>
+                      <select className="form-control" value={newListing.propertyType} onChange={e => setNewListing(n => ({ ...n, propertyType: e.target.value }))}>
+                        {["House", "Condo", "Townhouse", "Land"].map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Bedrooms</label>
+                      <input className="form-control" type="number" min="0" placeholder="e.g. 3"
+                        value={newListing.bedrooms} onChange={e => setNewListing(n => ({ ...n, bedrooms: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Bathrooms</label>
+                      <input className="form-control" type="number" step="0.5" min="0" placeholder="e.g. 2.5"
+                        value={newListing.bathrooms} onChange={e => setNewListing(n => ({ ...n, bathrooms: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Square Feet</label>
+                      <input className="form-control" type="number" min="0" placeholder="e.g. 2000"
+                        value={newListing.squareFeet} onChange={e => setNewListing(n => ({ ...n, squareFeet: e.target.value }))} />
+                    </div>
                   </div>
                   <div className="form-group" style={{ marginBottom: "1.5rem" }}>
-                    <label className="form-label text-muted">Description</label>
+                    <label className="form-label text-muted">Description *</label>
                     <textarea className="form-control" required rows={5} placeholder="Describe the property..."
                       value={newListing.description} onChange={e => setNewListing(n => ({ ...n, description: e.target.value }))}></textarea>
                   </div>
                   <div className="form-group" style={{ marginBottom: "2rem" }}>
-                    <label className="form-label text-muted">Media URLs (comma-separated)</label>
-                    <input className="form-control" placeholder="https://example.com/photo1.jpg, ..."
-                      value={newListing.mediaUrls} onChange={e => setNewListing(n => ({ ...n, mediaUrls: e.target.value }))} />
+                    <label className="form-label text-muted">Media URLs (separate multiple with commas)</label>
+                    <textarea className="form-control" rows={2} placeholder="https://example.com/photo1.jpg, https://example.com/photo2.jpg"
+                      value={newListing.mediaUrls} onChange={e => setNewListing(n => ({ ...n, mediaUrls: e.target.value }))}></textarea>
+                    <small className="text-muted" style={{ display: "block", marginTop: "0.5rem" }}>Separate multiple image links with a comma.</small>
                   </div>
-                  <div style={{ display: "flex", gap: "1rem" }}>
-                    <button type="submit" className="btn btn-primary">Submit for Review</button>
-                    <button type="button" className="btn btn-outline" onClick={() => setActiveSection("listings")}>Cancel</button>
+                  <div style={{ display: "flex", gap: "1rem", borderTop: "1px solid #eee", paddingTop: "1.5rem" }}>
+                    <button type="button" className="btn btn-outline" onClick={(e) => createListing(e, "DRAFT")}>
+                      <i className="bi bi-save me-1"></i>Save as Draft
+                    </button>
+                    <button type="button" className="btn btn-primary" onClick={(e) => createListing(e, "PENDING")}>
+                      <i className="bi bi-send me-1"></i>Submit for Review
+                    </button>
+                    <button type="button" className="btn btn-outline" style={{ marginLeft: "auto", border: "none" }} onClick={() => setActiveSection("listings")}>Cancel</button>
                   </div>
                 </form>
               </div>
             </>
           )}
 
-          {/* INQUIRIES */}
+          {/* EDIT LISTING */}
+          {activeSection === "edit" && editListing && (
+            <>
+              <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Edit Property Listing</h1>
+              <div className="card" style={{ padding: "2rem", maxWidth: "800px" }}>
+                {editListing.status === "APPROVED" && (
+                  <div style={{ borderLeft: "4px solid var(--warning)", paddingLeft: "1rem", marginBottom: "1.5rem", color: "var(--text-secondary)", fontSize: "0.9rem" }}>
+                    <strong>Note:</strong> This listing is currently live. Making major changes to price, location, or media will temporarily hide it until an admin re-approves it.
+                  </div>
+                )}
+                <form>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Location / Address *</label>
+                      <input className="form-control" required placeholder="123 Main St, Austin, TX"
+                        value={editListing.location} onChange={e => setEditListing((n: any) => ({ ...n, location: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Price (USD) *</label>
+                      <input className="form-control" type="number" required min="1"
+                        value={editListing.price} onChange={e => setEditListing((n: any) => ({ ...n, price: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Property Type</label>
+                      <select className="form-control" value={editListing.propertyType} onChange={e => setEditListing((n: any) => ({ ...n, propertyType: e.target.value }))}>
+                        {["House", "Condo", "Townhouse", "Land"].map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Bedrooms</label>
+                      <input className="form-control" type="number" min="0"
+                        value={editListing.bedrooms} onChange={e => setEditListing((n: any) => ({ ...n, bedrooms: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Bathrooms</label>
+                      <input className="form-control" type="number" step="0.5" min="0"
+                        value={editListing.bathrooms} onChange={e => setEditListing((n: any) => ({ ...n, bathrooms: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Square Feet</label>
+                      <input className="form-control" type="number" min="0"
+                        value={editListing.squareFeet} onChange={e => setEditListing((n: any) => ({ ...n, squareFeet: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: "1.5rem" }}>
+                    <label className="form-label text-muted">Description *</label>
+                    <textarea className="form-control" required rows={5}
+                      value={editListing.description} onChange={e => setEditListing((n: any) => ({ ...n, description: e.target.value }))}></textarea>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: "2rem" }}>
+                    <label className="form-label text-muted">Media URLs (separate multiple with commas)</label>
+                    <textarea className="form-control" rows={2}
+                      value={editListing.mediaUrls} onChange={e => setEditListing((n: any) => ({ ...n, mediaUrls: e.target.value }))}></textarea>
+                  </div>
+                  <div style={{ display: "flex", gap: "1rem", borderTop: "1px solid #eee", paddingTop: "1.5rem" }}>
+                    {editListing.status === "DRAFT" ? (
+                      <>
+                        <button type="button" className="btn btn-outline" onClick={(e) => submitEdit(e, "DRAFT")}>
+                          <i className="bi bi-save me-1"></i>Save Draft
+                        </button>
+                        <button type="button" className="btn btn-primary" onClick={(e) => submitEdit(e, "PENDING")}>
+                          <i className="bi bi-send me-1"></i>Submit for Review
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" className="btn btn-primary" onClick={(e) => submitEdit(e)}>
+                        <i className="bi bi-check2-circle me-1"></i>Save Changes
+                      </button>
+                    )}
+                    <button type="button" className="btn btn-outline" style={{ marginLeft: "auto", border: "none" }} onClick={() => { setEditListing(null); setActiveSection("listings"); }}>Cancel</button>
+                  </div>
+                </form>
+              </div>
+            </>
+          )}
+
+          {/* INQUIRIES & TOURS */}
           {activeSection === "inquiries" && (
             <>
               <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Inquiries & Tour Requests</h1>
 
-              <h3 style={{ fontWeight: 700, marginBottom: "1rem" }}>Messages</h3>
-              <div className="card" style={{ marginBottom: "2rem" }}>
+              <h3 style={{ fontWeight: 700, marginBottom: "1rem" }}>
+                Messages
+                <span style={{ fontSize: "0.85rem", fontWeight: 500, color: "var(--text-light)", marginLeft: "0.75rem" }}>
+                  {inquiries.filter(i => i.status === "OPEN" || i.status === null).length} open
+                </span>
+              </h3>
+              <div className="card" style={{ marginBottom: "2.5rem" }}>
                 {inquiries.length === 0 ? (
-                  <p className="text-muted" style={{ padding: "2rem" }}>No inquiries yet.</p>
-                ) : inquiries.map(inq => (
-                  <div key={inq.id} style={{ padding: "1.25rem", borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
-                    <p style={{ fontWeight: 500, marginBottom: "0.75rem" }}>{inq.message}</p>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      <input className="form-control" placeholder="Reply..." style={{ flex: 1 }}
-                        value={inquiryResponses[inq.id] || ""}
-                        onChange={e => setInquiryResponses(prev => ({ ...prev, [inq.id]: e.target.value }))} />
-                      <button className="btn btn-primary" onClick={() => respondInquiry(inq.id)} style={{ flexShrink: 0 }}>Reply</button>
-                    </div>
+                  <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-light)" }}>
+                    <i className="bi bi-chat-left" style={{ fontSize: "2rem", display: "block", marginBottom: "0.75rem" }}></i>
+                    No inquiries yet.
                   </div>
-                ))}
+                ) : inquiries.map(inq => {
+                  const meta = parseInquiryMeta(inq.message);
+                  return (
+                    <div key={inq.id} style={{ padding: "1.5rem", borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                          <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "linear-gradient(135deg, var(--primary-color), var(--secondary-color))", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 800, fontSize: "1rem", flexShrink: 0 }}>
+                            {(meta.name ?? inq.message)[0].toUpperCase()}
+                          </div>
+                          <div>
+                            {meta.name && <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>{meta.name}</div>}
+                            <div style={{ display: "flex", gap: "1rem", fontSize: "0.8rem", color: "var(--text-light)", marginTop: "0.1rem" }}>
+                              {meta.email && <span><i className="bi bi-envelope" style={{ marginRight: "0.25rem" }}></i>{meta.email}</span>}
+                              {meta.phone && <span><i className="bi bi-telephone" style={{ marginRight: "0.25rem" }}></i>{meta.phone}</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <span className={`badge ${inq.status === "RESOLVED" ? "badge-success" : inq.status === "ANSWERED" ? "badge-warning" : ""}`}>
+                          {inq.status ?? "OPEN"}
+                        </span>
+                      </div>
+                      <div style={{ background: "var(--bg-secondary)", borderRadius: "var(--border-radius-sm)", padding: "0.9rem 1rem", marginBottom: "1rem", fontSize: "0.9rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                        {meta.body}
+                      </div>
+                      {inq.status !== "RESOLVED" && (
+                        <>
+                          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                            <input className="form-control" placeholder="Write a reply..." style={{ flex: 1 }}
+                              value={inquiryResponses[inq.id] || ""}
+                              onChange={e => setInquiryResponses(prev => ({ ...prev, [inq.id]: e.target.value }))} />
+                            <button className="btn btn-primary" onClick={() => respondInquiry(inq.id)} style={{ flexShrink: 0 }}>
+                              <i className="bi bi-send me-1"></i>Reply
+                            </button>
+                          </div>
+                          <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <button className="btn btn-outline" onClick={() => resolveInquiry(inq.id, "ANSWERED")}
+                              disabled={inq.status === "ANSWERED"}
+                              style={{ fontSize: "0.8rem", padding: "0.3rem 0.9rem" }}>
+                              <i className="bi bi-check me-1"></i>Mark Answered
+                            </button>
+                            <button className="btn btn-outline" onClick={() => resolveInquiry(inq.id, "RESOLVED")}
+                              style={{ fontSize: "0.8rem", padding: "0.3rem 0.9rem", color: "var(--success)", borderColor: "var(--success)" }}>
+                              <i className="bi bi-check-all me-1"></i>Resolve
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
-              <h3 style={{ fontWeight: 700, marginBottom: "1rem" }}>Tour Requests</h3>
+              <h3 style={{ fontWeight: 700, marginBottom: "1rem" }}>
+                Tour Requests
+                <span style={{ fontSize: "0.85rem", fontWeight: 500, color: "var(--text-light)", marginLeft: "0.75rem" }}>
+                  {tourRequests.filter(t => t.status === "REQUESTED").length} pending
+                </span>
+              </h3>
               <div className="card">
                 {tourRequests.length === 0 ? (
-                  <p className="text-muted" style={{ padding: "2rem" }}>No tour requests.</p>
-                ) : tourRequests.map(tour => (
-                  <div key={tour.id} style={{ padding: "1.25rem", borderBottom: "1px solid rgba(0,0,0,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontWeight: 600 }}>{new Date(tour.preferredTime).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
-                      <span className={`badge ${tour.status === "CONFIRMED" ? "badge-success" : "badge-warning"}`}>{tour.status}</span>
-                    </div>
-                    {tour.status === "REQUESTED" && (
-                      <button onClick={() => confirmTour(tour.id)} className="btn btn-primary" style={{ fontSize: "0.85rem" }}>Confirm Tour</button>
-                    )}
+                  <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-light)" }}>
+                    <i className="bi bi-calendar-x" style={{ fontSize: "2rem", display: "block", marginBottom: "0.75rem" }}></i>
+                    No tour requests yet.
                   </div>
-                ))}
+                ) : tourRequests.map(tour => {
+                  const { date, time } = parseTourMeta(tour);
+                  return (
+                    <div key={tour.id} style={{ padding: "1.5rem", borderBottom: "1px solid rgba(0,0,0,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                        <div style={{ width: "48px", height: "48px", borderRadius: "var(--border-radius-sm)", background: "var(--bg-secondary)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <i className="bi bi-calendar3" style={{ color: "var(--primary-color)", fontSize: "1.2rem" }}></i>
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>{date}</div>
+                          <div style={{ fontSize: "0.85rem", color: "var(--text-light)" }}>
+                            <i className="bi bi-clock me-1"></i>{time}
+                          </div>
+                          <span className={`badge mt-1 ${tour.status === "CONFIRMED" ? "badge-success" : tour.status === "DECLINED" ? "badge-danger" : "badge-warning"}`}>
+                            {tour.status}
+                          </span>
+                        </div>
+                      </div>
+                      {tour.status === "REQUESTED" && (
+                        <div style={{ display: "flex", gap: "0.5rem" }}>
+                          <button onClick={() => confirmTour(tour.id)} className="btn btn-primary" style={{ fontSize: "0.85rem" }}>
+                            <i className="bi bi-calendar-check me-1"></i>Confirm
+                          </button>
+                          <button onClick={() => declineTour(tour.id)} className="btn btn-outline" style={{ fontSize: "0.85rem", color: "var(--danger,#ef4444)", borderColor: "var(--danger,#ef4444)" }}>
+                            <i className="bi bi-x me-1"></i>Decline
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
@@ -402,16 +692,13 @@ export const AgentDashboardPage = (): JSX.Element => {
           {/* VERIFICATION */}
           {activeSection === "profile" && (
             <>
-              <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>License Verification</h1>
+              <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Verifying Profile and License</h1>
               <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
                 <div className="card" style={{ flex: 1, minWidth: "280px", padding: "2rem" }}>
                   <h4 style={{ fontWeight: 800, marginBottom: "1.5rem" }}>Current Status</h4>
                   <div style={{ background: "var(--bg-primary)", borderRadius: "8px", padding: "1.5rem", marginBottom: "1rem" }}>
                     <div style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", color: "var(--text-light)", marginBottom: "0.5rem" }}>Agent Role</div>
-                    <span className={`badge ${status === "APPROVED" || status === "VERIFIED"
-                      ? "badge-success"
-                      : "badge-warning"
-                      }`}>
+                    <span className={`badge ${verStatus === "APPROVED" || verStatus === "VERIFIED" ? "badge-success" : "badge-warning"}`}>
                       {verification?.status || "PENDING"}
                     </span>
                   </div>
@@ -421,21 +708,112 @@ export const AgentDashboardPage = (): JSX.Element => {
                   </div>
                 </div>
                 <div className="card" style={{ flex: 2, minWidth: "320px", padding: "2rem" }}>
-                  <h4 style={{ fontWeight: 800, marginBottom: "1rem" }}>Submit License Document</h4>
-                  <div style={{ borderLeft: "4px solid var(--primary-color)", paddingLeft: "1rem", marginBottom: "1.5rem", color: "var(--text-secondary)" }}>
-                    Your license must be reviewed by an admin before your listings go live to the public.
-                  </div>
-                  <form onSubmit={submitApplication}>
-                    <div className="form-group" style={{ marginBottom: "1.5rem" }}>
-                      <label className="form-label text-muted">License Document URL (PDF or image link)</label>
-                      <input type="url" className="form-control" required placeholder="https://example.com/my-license.pdf"
-                        value={docUrl} onChange={e => setDocUrl(e.target.value)} />
+                  <h4 style={{ fontWeight: 800, marginBottom: "1rem" }}>Required Information</h4>
+                  {verStatus === "APPROVED" || verStatus === "VERIFIED" ? (
+                    <div style={{ background: "rgba(16, 185, 129, 0.1)", border: "1px solid var(--success)", padding: "1rem", borderRadius: "8px", marginBottom: "1.5rem", color: "var(--success)", fontSize: "0.95rem", fontWeight: 600 }}>
+                      <i className="bi bi-check-circle-fill me-2"></i>Agent profile verification is complete.
                     </div>
-                    <button type="submit" className="btn btn-primary" disabled={verification?.applicationStatus === "PENDING"}>
-                      {verification?.applicationStatus === "PENDING" ? "Under Review" : "Submit Application"}
-                    </button>
+                  ) : (
+                    <div style={{ borderLeft: "4px solid var(--warning)", paddingLeft: "1rem", marginBottom: "1.5rem", color: "var(--text-secondary)", fontSize: "0.9rem" }}>
+                      Updating your profile will require an admin to re-verify your license before your listings go live.
+                    </div>
+                  )}
+                  <form onSubmit={updateProfileSubmit}>
+                    <div className="form-group" style={{ marginBottom: "1rem" }}>
+                      <label className="form-label text-muted">Full Name</label>
+                      <input type="text" className="form-control" value={profileForm.fullName}
+                        onChange={e => setProfileForm(p => ({ ...p, fullName: e.target.value }))}
+                        readOnly={verStatus === "APPROVED" || verStatus === "VERIFIED"}
+                        style={verStatus === "APPROVED" || verStatus === "VERIFIED" ? { background: "#f8f9fa" } : {}} />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+                      <div className="form-group">
+                        <label className="form-label text-muted">Contact Email {verStatus !== "APPROVED" && verStatus !== "VERIFIED" && "*"}</label>
+                        <input type="email" className="form-control" value={profileForm.contactEmail}
+                          onChange={e => setProfileForm(p => ({ ...p, contactEmail: e.target.value }))}
+                          readOnly={verStatus === "APPROVED" || verStatus === "VERIFIED"}
+                          style={verStatus === "APPROVED" || verStatus === "VERIFIED" ? { background: "#f8f9fa" } : {}} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label text-muted">Phone Number</label>
+                        <input type="tel" className="form-control" value={profileForm.phoneNumber}
+                          onChange={e => setProfileForm(p => ({ ...p, phoneNumber: e.target.value }))}
+                          readOnly={verStatus === "APPROVED" || verStatus === "VERIFIED"}
+                          style={verStatus === "APPROVED" || verStatus === "VERIFIED" ? { background: "#f8f9fa" } : {}} />
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.5rem" }}>
+                      <div className="form-group">
+                        <label className="form-label text-muted">License Number {verStatus !== "APPROVED" && verStatus !== "VERIFIED" && "*"}</label>
+                        <input type="text" className="form-control" value={profileForm.licenseNumber}
+                          onChange={e => setProfileForm(p => ({ ...p, licenseNumber: e.target.value }))}
+                          readOnly={verStatus === "APPROVED" || verStatus === "VERIFIED"}
+                          style={verStatus === "APPROVED" || verStatus === "VERIFIED" ? { background: "#f8f9fa" } : {}} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label text-muted">Expiration Date</label>
+                        <input type="date" className="form-control" value={profileForm.licenseExpirationDate}
+                          onChange={e => setProfileForm(p => ({ ...p, licenseExpirationDate: e.target.value }))}
+                          readOnly={verStatus === "APPROVED" || verStatus === "VERIFIED"}
+                          style={verStatus === "APPROVED" || verStatus === "VERIFIED" ? { background: "#f8f9fa" } : {}} />
+                      </div>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: "1.5rem" }}>
+                      <label className="form-label text-muted">License Document URL {verStatus !== "APPROVED" && verStatus !== "VERIFIED" && "*"}</label>
+                      <input type="url" className="form-control" value={profileForm.licenseUrl}
+                        placeholder="https://example.com/license.jpg"
+                        onChange={e => setProfileForm(p => ({ ...p, licenseUrl: e.target.value }))}
+                        readOnly={verStatus === "APPROVED" || verStatus === "VERIFIED"}
+                        style={verStatus === "APPROVED" || verStatus === "VERIFIED" ? { background: "#f8f9fa" } : {}} />
+                    </div>
+                    {verStatus !== "APPROVED" && verStatus !== "VERIFIED" && (
+                      <button type="submit" className="btn btn-primary" disabled={verification?.applicationStatus === "PENDING"}>
+                        {verification?.applicationStatus === "PENDING" ? "Application Under Review" : "Save Profile & Submit License"}
+                      </button>
+                    )}
                   </form>
                 </div>
+              </div>
+            </>
+          )}
+
+          {/* PUBLIC PROFILE */}
+          {activeSection === "public-profile" && (
+            <>
+              <h1 style={{ fontWeight: 800, marginBottom: "2rem" }}>Update Public Profile</h1>
+              <div className="card" style={{ padding: "2rem", maxWidth: "800px" }}>
+                <div style={{ borderLeft: "4px solid var(--primary-color)", paddingLeft: "1rem", marginBottom: "1.5rem", color: "var(--text-secondary)", fontSize: "0.9rem" }}>
+                  This information will be displayed on your public agent profile for buyers to see. Updating this does not affect your verification status.
+                </div>
+                <form onSubmit={updatePublicProfileSubmit}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Contact Email *</label>
+                      <input type="email" required className="form-control" value={publicProfileForm.contactEmail}
+                        onChange={e => setPublicProfileForm(p => ({ ...p, contactEmail: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label text-muted">Phone Number *</label>
+                      <input type="tel" required className="form-control" value={publicProfileForm.phoneNumber}
+                        onChange={e => setPublicProfileForm(p => ({ ...p, phoneNumber: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: "1.5rem" }}>
+                    <label className="form-label text-muted">Profile Picture URL</label>
+                    <input type="url" className="form-control" value={publicProfileForm.profilePictureUrl}
+                      placeholder="https://example.com/my-photo.jpg"
+                      onChange={e => setPublicProfileForm(p => ({ ...p, profilePictureUrl: e.target.value }))} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: "2rem" }}>
+                    <label className="form-label text-muted">Bio / About Me</label>
+                    <textarea className="form-control" rows={6} value={publicProfileForm.bio}
+                      placeholder="Tell buyers about your experience, specialties, and service areas..."
+                      onChange={e => setPublicProfileForm(p => ({ ...p, bio: e.target.value }))}></textarea>
+                  </div>
+                  <button type="submit" className="btn btn-primary">
+                    <i className="bi bi-save me-2"></i>Save Public Profile
+                  </button>
+                </form>
               </div>
             </>
           )}
