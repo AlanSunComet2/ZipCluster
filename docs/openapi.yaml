@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Moderated Real Estate Marketplace API
+  title: ZipCluster API
   version: 1.0.0
 servers:
   - url: http://localhost:4000

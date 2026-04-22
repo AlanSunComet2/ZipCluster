@@ -1,35 +1,121 @@
 import { ApiClient } from "./client";
 
+export type AdminListingStatus = "PENDING" | "APPROVED" | "SOLD";
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  role: string;
+  isActive: boolean;
+  isVerified: boolean;
+}
+
+export interface AdminListingSummary {
+  id: string;
+  location: string;
+  price: number;
+  status: AdminListingStatus;
+  propertyType: string | null;
+  agentId: string;
+  zipCode: string | null;
+  description: string;
+  mediaUrls: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminListingDetails extends AdminListingSummary {
+  agent: { id: string; email: string } | null;
+}
+
+export interface AdminPendingAgent {
+  id: string;
+  email: string;
+  createdAt: string;
+  application: {
+    id: string;
+    status: string;
+    notes: string | null;
+    createdAt: string;
+    reviewedAt: string | null;
+    licenseDocs: Array<{ id: string; fileUrl: string; mimeType: string; uploadedAt: string }>;
+  } | null;
+}
+
+export interface AdminBanner {
+  id: string;
+  title: string;
+  imageUrl: string;
+  ctaText: string | null;
+  ctaUrl: string | null;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface AdminCategory {
+  id: string;
+  name: string;
+}
+
+export interface ResetPasswordResponse {
+  message: string;
+  temporaryPassword: string;
+  resetToken: string;
+  resetUrl: string;
+  expiresAt: string;
+}
+
 export const createAdminApi = (client: ApiClient) => ({
-  listUsers: (): Promise<{ items: Array<{ id: string; email: string; role: string; isActive: boolean; isVerified: boolean }> }> =>
+  listUsers: (): Promise<{ items: AdminUser[] }> =>
     client.request("GET", "/admin/users"),
-  getPendingAgents: (): Promise<{ items: Array<{ id: string; email: string }> }> =>
-    client.request<{ items: Array<{ id: string; email: string }> }>("GET", "/admin/agents/pending"),
-  getPendingListings: (): Promise<{ items: Array<{ id: string; location: string }> }> =>
-    client.request<{ items: Array<{ id: string; location: string }> }>("GET", "/admin/listings/pending"),
-  getPendingAgentApplications: (): Promise<{ items: Array<{ id: string; applicantId: string; status: string }> }> =>
-    client.request("GET", "/admin/agent-applications/pending"),
+  getPendingAgents: (): Promise<{ items: AdminPendingAgent[] }> =>
+    client.request("GET", "/admin/agents/pending"),
+  getListings: (status?: AdminListingStatus | "ALL"): Promise<{ items: AdminListingSummary[] }> => {
+    if (!status || status === "ALL") {
+      return client.request("GET", "/admin/listings");
+    }
+    return client.request("GET", `/admin/listings?status=${status}`);
+  },
+  getListingDetails: (listingId: string): Promise<AdminListingDetails> =>
+    client.request("GET", `/admin/listings/${listingId}`),
+  getPendingListings: (): Promise<{ items: AdminListingSummary[] }> =>
+    client.request("GET", "/admin/listings/pending"),
   approveListing: (listingId: string, notes?: string): Promise<{ message: string }> =>
     client.request("PATCH", `/admin/listings/${listingId}/approve`, { notes }),
   rejectListing: (listingId: string, notes?: string): Promise<{ message: string }> =>
     client.request("PATCH", `/admin/listings/${listingId}/reject`, { notes }),
   approveAgent: (agentId: string): Promise<{ message: string }> =>
     client.request("PATCH", `/admin/agents/${agentId}/approve`),
-  rejectAgent: (agentId: string, notes?: string): Promise<{ message: string }> =>
+  rejectAgent: (agentId: string, notes: string): Promise<{ message: string }> =>
     client.request("PATCH", `/admin/agents/${agentId}/reject`, { notes }),
+  requestAgentDocuments: (agentId: string, message: string): Promise<{ message: string }> =>
+    client.request("POST", `/admin/agents/${agentId}/request-documents`, { message }),
   deactivateUser: (userId: string): Promise<{ message: string }> =>
     client.request("PATCH", `/admin/users/${userId}/deactivate`),
   reactivateUser: (userId: string): Promise<{ message: string }> =>
     client.request("PATCH", `/admin/users/${userId}/reactivate`),
-  listPropertyCategories: (): Promise<{ items: Array<{ id: string; name: string }> }> =>
+  resetUserPassword: (userId: string): Promise<ResetPasswordResponse> =>
+    client.request("POST", `/admin/users/${userId}/reset-password`),
+
+  listPropertyCategories: (): Promise<{ items: AdminCategory[] }> =>
     client.request("GET", "/admin/property-categories"),
-  createPropertyCategory: (name: string): Promise<{ id: string; name: string }> =>
+  createPropertyCategory: (name: string): Promise<AdminCategory> =>
     client.request("POST", "/admin/property-categories", { name }),
-  listGeoCategories: (): Promise<{ items: Array<{ id: string; name: string }> }> =>
+  updatePropertyCategory: (id: string, name: string): Promise<AdminCategory> =>
+    client.request("PATCH", `/admin/property-categories/${id}`, { name }),
+  deletePropertyCategory: (id: string): Promise<void> =>
+    client.request("DELETE", `/admin/property-categories/${id}`),
+
+  listGeoCategories: (): Promise<{ items: AdminCategory[] }> =>
     client.request("GET", "/admin/geo-categories"),
-  createGeoCategory: (name: string): Promise<{ id: string; name: string }> =>
+  createGeoCategory: (name: string): Promise<AdminCategory> =>
     client.request("POST", "/admin/geo-categories", { name }),
-  listBanners: (): Promise<{ items: Array<{ id: string; title: string; imageUrl: string; isActive: boolean }> }> =>
+  updateGeoCategory: (id: string, name: string): Promise<AdminCategory> =>
+    client.request("PATCH", `/admin/geo-categories/${id}`, { name }),
+  deleteGeoCategory: (id: string): Promise<void> =>
+    client.request("DELETE", `/admin/geo-categories/${id}`),
+
+  listBanners: (): Promise<{ items: AdminBanner[] }> =>
     client.request("GET", "/admin/cms/banners"),
   createBanner: (payload: {
     title: string;
@@ -38,7 +124,18 @@ export const createAdminApi = (client: ApiClient) => ({
     ctaText?: string;
     ctaUrl?: string;
     sortOrder?: number;
-  }): Promise<{ id: string }> => client.request("POST", "/admin/cms/banners", payload),
+  }): Promise<AdminBanner> => client.request("POST", "/admin/cms/banners", payload),
+  updateBanner: (id: string, payload: Partial<{
+    title: string;
+    imageUrl: string;
+    isActive: boolean;
+    ctaText: string;
+    ctaUrl: string;
+    sortOrder: number;
+  }>): Promise<AdminBanner> => client.request("PATCH", `/admin/cms/banners/${id}`, payload),
+  deleteBanner: (id: string): Promise<void> =>
+    client.request("DELETE", `/admin/cms/banners/${id}`),
+
   getListingModerationHistory: (listingId: string): Promise<{ items: Array<{ id: string; action: string; notes: string | null; createdAt: string }> }> =>
     client.request("GET", `/admin/listings/${listingId}/moderation-history`),
   getAnalyticsOverview: (): Promise<{

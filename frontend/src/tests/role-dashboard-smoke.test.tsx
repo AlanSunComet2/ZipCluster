@@ -1,5 +1,7 @@
+import React from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { AuthProvider } from "../auth/AuthProvider";
 import { AdminDashboardPage } from "../pages/admin/AdminDashboardPage";
 import { AgentDashboardPage } from "../pages/agent/AgentDashboardPage";
@@ -61,11 +63,13 @@ describe("Role dashboard smoke", () => {
       JSON.stringify({ accessToken: "token", refreshToken: "refresh", role: "ADMIN", email: "admin@marketplace.local" }),
     );
     render(
-      <AuthProvider>
-        <AdminDashboardPage />
-      </AuthProvider>,
+      <MemoryRouter>
+        <AuthProvider>
+          <AdminDashboardPage />
+        </AuthProvider>
+      </MemoryRouter>,
     );
-    expect(await screen.findByText("Admin dashboard")).toBeTruthy();
+    expect(await screen.findByText("System Overview")).toBeTruthy();
   });
 
   test("renders agent dashboard for agent session", async () => {
@@ -74,11 +78,13 @@ describe("Role dashboard smoke", () => {
       JSON.stringify({ accessToken: "token", refreshToken: "refresh", role: "AGENT", email: "agent@marketplace.local" }),
     );
     render(
-      <AuthProvider>
-        <AgentDashboardPage />
-      </AuthProvider>,
+      <MemoryRouter>
+        <AuthProvider>
+          <AgentDashboardPage />
+        </AuthProvider>
+      </MemoryRouter>,
     );
-    expect(await screen.findByText("Agent dashboard")).toBeTruthy();
+    expect(await screen.findByText("Dashboard Overview")).toBeTruthy();
   });
 
   test("renders user discovery for user session", async () => {
@@ -87,10 +93,12 @@ describe("Role dashboard smoke", () => {
       JSON.stringify({ accessToken: "token", refreshToken: "refresh", role: "USER", email: "user@marketplace.local" }),
     );
     render(
-      <AuthProvider>
-        <UserDiscoveryPage />
-      </AuthProvider>,
+      <MemoryRouter>
+        <AuthProvider>
+          <UserDiscoveryPage />
+        </AuthProvider>
+      </MemoryRouter>,
     );
-    expect(await screen.findByText("User discovery")).toBeTruthy();
+    expect(await screen.findByText(/Properties Found|Property Found/)).toBeTruthy();
   });
 });

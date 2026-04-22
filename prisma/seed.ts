@@ -1,5 +1,7 @@
 import bcrypt from "bcryptjs";
-import { PrismaClient, UserRole } from "@prisma/client";
+import { PrismaClient, $Enums } from "@prisma/client";
+
+const { UserRole } = $Enums;
 
 const prisma = new PrismaClient();
 
@@ -31,6 +33,35 @@ const main = async (): Promise<void> => {
     create: { email: "user@marketplace.local", passwordHash, role: UserRole.USER, isVerified: true, isActive: true },
   });
 
+  // A pending agent applicant so the admin's "Agent Applications" review
+  // workflow has a real, predictable record to exercise end-to-end.
+  const pendingAgent = await prisma.user.upsert({
+    where: { email: "pending-agent@marketplace.local" },
+    update: { passwordHash, role: UserRole.AGENT, isVerified: false, isActive: true, deactivatedAt: null },
+    create: { email: "pending-agent@marketplace.local", passwordHash, role: UserRole.AGENT, isVerified: false, isActive: true },
+  });
+
+  const existingApplication = await prisma.agentApplication.findFirst({
+    where: { applicantId: pendingAgent.id, status: "PENDING" },
+  });
+  if (!existingApplication) {
+    await prisma.agentApplication.create({
+      data: {
+        applicantId: pendingAgent.id,
+        status: "PENDING",
+        notes: "Applicant: Jordan Rivera\nLicense #: RE-2026-00781\nLicense Expires: 2028-06-30\nPhone: (512) 555-0188",
+        licenseDocs: {
+          create: [
+            {
+              fileUrl: "https://example.com/uploads/agent-applications/jordan-rivera-license.pdf",
+              mimeType: "application/pdf",
+            },
+          ],
+        },
+      },
+    });
+  }
+  
   // Property types
   const [houseType, condoType, landType, townType] = await Promise.all([
     prisma.propertyType.upsert({ where: { name: "House" }, update: {}, create: { name: "House" } }),

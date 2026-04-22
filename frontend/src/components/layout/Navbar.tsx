@@ -14,7 +14,7 @@ export const Navbar = (): JSX.Element => {
     <header>
       <nav className="container navbar">
         <Link to="/" className="navbar-brand">
-          <i className="bi bi-building"></i> RealEstate.co
+          <i className="bi bi-building"></i> ZipCluster
         </Link>
         <ul className="navbar-nav">
           <li><Link to="/" className="nav-link">Buy</Link></li>

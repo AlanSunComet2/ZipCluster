@@ -1,4 +1,4 @@
-# Moderated Real Estate Marketplace
+# ZipCluster
 
 TypeScript-only moderated marketplace with three roles:
 - `ADMIN`: approves agents and listings, manages users/categories/CMS, monitors analytics.
