@@ -1,4 +1,10 @@
-import type { AuthResponse, LoginInput, RefreshInput, RegisterInput } from "./contracts";
+import type {
+  AuthResponse,
+  ChangePasswordInput,
+  LoginInput,
+  RefreshInput,
+  RegisterInput,
+} from "./contracts";
 import { ApiClient } from "./client";
 
 export const createAuthApi = (client: ApiClient) => ({
@@ -10,6 +16,12 @@ export const createAuthApi = (client: ApiClient) => ({
     client.request<{ accessToken: string; refreshToken: string }, RefreshInput>(
       "POST",
       "/auth/refresh",
+      payload,
+    ),
+  changePassword: (payload: ChangePasswordInput): Promise<{ message: string }> =>
+    client.request<{ message: string }, ChangePasswordInput>(
+      "POST",
+      "/auth/change-password",
       payload,
     ),
 });

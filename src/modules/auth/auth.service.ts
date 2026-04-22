@@ -5,7 +5,7 @@ import { HttpError } from "../../lib/http";
 import { prisma } from "../../lib/prisma";
 import type { UserRole } from "../../types/auth";
 import { userStore, type UserRecord } from "../users/user.store";
-import type { LoginInput, RegisterInput, SsoInput } from "./auth.schemas";
+import type { ChangePasswordInput, LoginInput, RegisterInput, SsoInput } from "./auth.schemas";
 
 interface TokenPair {
   accessToken: string;
@@ -41,6 +41,13 @@ export class AuthService {
       isActive: true,
       deactivatedAt: null,
       createdAt: new Date(),
+      fullName: null,
+      contactEmail: null,
+      phoneNumber: null,
+      licenseNumber: null,
+      licenseExpirationDate: null,
+      bio: null,
+      profilePictureUrl: null,
     });
 
     return {
@@ -79,10 +86,43 @@ export class AuthService {
         isActive: true,
         deactivatedAt: null,
         createdAt: new Date(),
+        fullName: null,
+        contactEmail: null,
+        phoneNumber: null,
+        licenseNumber: null,
+        licenseExpirationDate: null,
+        bio: null,
+        profilePictureUrl: null,
       });
     }
 
     return { user: this.mapUser(user), tokens: await this.issueTokens(user) };
+  }
+
+  async changePassword(
+    userId: string,
+    input: ChangePasswordInput,
+  ): Promise<{ message: string }> {
+    const user = await userStore.findById(userId);
+    if (!user || !user.isActive) {
+      throw new HttpError(401, "Account not found or inactive.");
+    }
+
+    const matches = await bcrypt.compare(input.currentPassword, user.passwordHash);
+    if (!matches) {
+      throw new HttpError(400, "Current password is incorrect.");
+    }
+
+    const newHash = await bcrypt.hash(input.newPassword, 10);
+    await userStore.upsert({ ...user, passwordHash: newHash });
+
+    // Invalidate all active refresh tokens so other sessions are signed out.
+    await prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
+    return { message: "Password updated. Please sign in again." };
   }
 
   async refresh(refreshToken: string): Promise<TokenPair> {

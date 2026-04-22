@@ -48,6 +48,9 @@ npm run dev:all
 
 ## 6) Suggested walkthrough order
 
+For the investor-focused admin script, use:
+- `docs/admin-investor-demo.md`
+
 ### Admin flow
 
 1. Login as admin and open `/admin`.

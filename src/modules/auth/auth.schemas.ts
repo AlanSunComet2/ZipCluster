@@ -20,7 +20,21 @@ export const ssoSchema = z.object({
   email: z.string().email(),
 });
 
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(8),
+    newPassword: z
+      .string()
+      .min(8, "New password must be at least 8 characters.")
+      .max(128, "New password is too long."),
+  })
+  .refine((data) => data.currentPassword !== data.newPassword, {
+    message: "New password must be different from the current password.",
+    path: ["newPassword"],
+  });
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
 export type SsoInput = z.infer<typeof ssoSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;

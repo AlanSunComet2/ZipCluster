@@ -1,6 +1,14 @@
 import type { Request, Response } from "express";
+import { HttpError } from "../../lib/http";
+import type { AuthenticatedRequest } from "../../types/auth";
 import type { AuthService } from "./auth.service";
-import type { LoginInput, RefreshTokenInput, RegisterInput, SsoInput } from "./auth.schemas";
+import type {
+  ChangePasswordInput,
+  LoginInput,
+  RefreshTokenInput,
+  RegisterInput,
+  SsoInput,
+} from "./auth.schemas";
 
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -28,5 +36,20 @@ export class AuthController {
   appleSso = async (req: Request<unknown, unknown, SsoInput>, res: Response): Promise<void> => {
     const result = await this.authService.ssoLogin(req.body);
     res.status(200).json({ provider: "apple", ...result });
+  };
+
+  changePassword = async (
+    req: AuthenticatedRequest,
+    res: Response,
+  ): Promise<void> => {
+    const userId = req.user?.sub;
+    if (!userId) {
+      throw new HttpError(401, "Authentication required.");
+    }
+    const result = await this.authService.changePassword(
+      userId,
+      req.body as ChangePasswordInput,
+    );
+    res.status(200).json(result);
   };
 }

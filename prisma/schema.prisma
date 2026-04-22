@@ -99,6 +99,8 @@ model PropertyListing {
   bedrooms              Int?
   bathrooms             Float?
   squareFeet            Int?
+  isDeleted             Boolean                  @default(false)
+  deletedAt             DateTime?
 
   @@index([agentId])
   @@index([status])
@@ -107,6 +109,7 @@ model PropertyListing {
   @@index([propertyTypeId])
   @@index([geoCategoryId])
   @@index([status, price])
+  @@index([isDeleted])
 }
 
 model Inquiry {

@@ -39,6 +39,32 @@ export const createAdminRouter = (): Router => {
     message: z.string().min(3).max(500),
   });
 
+  const listingUpdateSchema = z
+    .object({
+      price: z.number().positive().optional(),
+      location: z.string().min(2).optional(),
+      zipCode: z.string().min(3).max(20).optional(),
+      lat: z.number().optional(),
+      lng: z.number().optional(),
+      propertyType: z.string().min(2).optional(),
+      description: z.string().min(1).optional(),
+      bedrooms: z.number().int().min(0).optional(),
+      bathrooms: z.number().min(0).optional(),
+      squareFeet: z.number().int().min(0).optional(),
+      status: z.enum(["PENDING", "APPROVED", "SOLD"]).optional(),
+      mediaUrls: z.array(z.string().url()).optional(),
+      notes: z.string().max(500).optional(),
+    })
+    .refine(
+      (data) => Object.keys(data).some((key) => key !== "notes" && data[key as keyof typeof data] !== undefined),
+      { message: "Provide at least one field to update." },
+    );
+
+  const listingDeleteSchema = z.object({
+    confirm: z.literal("DELETE"),
+    notes: z.string().max(500).optional(),
+  });
+
   router.get("/agents/pending", async (_req, res) => {
     const users = (await userStore.list()).filter(
       (user) => user.role === "AGENT" && !user.isVerified,
@@ -207,6 +233,61 @@ export const createAdminRouter = (): Router => {
     res.status(200).json({ message: "Listing approved." });
   });
 
+  router.patch(
+    "/listings/:id",
+    validateBody(listingUpdateSchema),
+    async (req: AuthenticatedRequest, res) => {
+      const listing = await listingStore.findById(asParam(req.params.id));
+      if (!listing) {
+        res.status(404).json({ message: "Listing not found." });
+        return;
+      }
+      const { notes, ...updates } = req.body as {
+        notes?: string;
+        price?: number;
+        location?: string;
+        zipCode?: string;
+        lat?: number;
+        lng?: number;
+        propertyType?: string;
+        description?: string;
+        bedrooms?: number;
+        bathrooms?: number;
+        squareFeet?: number;
+        status?: ListingStatus;
+        mediaUrls?: string[];
+      };
+      const updated = await listingStore.updateById(listing.id, updates);
+      await listingStore.createModerationAction({
+        listingId: listing.id,
+        actedById: req.user?.sub ?? "",
+        action: "EDITED_BY_ADMIN",
+        notes: notes ?? `Admin updated fields: ${Object.keys(updates).join(", ")}`,
+      });
+      res.status(200).json({ message: "Listing updated.", listing: updated });
+    },
+  );
+
+  router.delete(
+    "/listings/:id",
+    validateBody(listingDeleteSchema),
+    async (req: AuthenticatedRequest, res) => {
+      const listing = await listingStore.findById(asParam(req.params.id));
+      if (!listing) {
+        res.status(404).json({ message: "Listing not found." });
+        return;
+      }
+      await listingStore.softDelete(listing.id);
+      await listingStore.createModerationAction({
+        listingId: listing.id,
+        actedById: req.user?.sub ?? "",
+        action: "DELETED_BY_ADMIN",
+        notes: req.body.notes,
+      });
+      res.status(200).json({ message: "Listing removed." });
+    },
+  );
+
   router.patch("/listings/:id/reject", validateBody(moderationSchema), async (req: AuthenticatedRequest, res) => {
     const listing = await listingStore.findById(asParam(req.params.id));
     if (!listing) {
@@ -269,6 +350,14 @@ export const createAdminRouter = (): Router => {
     await userStore.upsert({
       ...user,
       passwordHash,
+    });
+
+    // Invalidate every outstanding refresh token for this user so any
+    // previously issued session is forced to sign in again with the new
+    // temporary password.
+    await prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { usedAt: new Date() },
     });
 
     // Keep token generation so existing demo flows that reference reset links

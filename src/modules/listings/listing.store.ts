@@ -20,6 +20,8 @@ export interface PropertyListingRecord {
   mediaUrls: string[];
   createdAt: Date;
   updatedAt: Date;
+  isDeleted: boolean;
+  deletedAt: Date | null;
 }
 
 export interface ListingModerationActionRecord {
@@ -46,6 +48,8 @@ const toRecord = (listing: {
   squareFeet: number | null;
   createdAt: Date;
   updatedAt: Date;
+  isDeleted?: boolean;
+  deletedAt?: Date | null;
   propertyType: { name: string } | null;
   media: Array<{ mediaUrl: string }>;
 }): PropertyListingRecord => ({
@@ -65,6 +69,8 @@ const toRecord = (listing: {
   mediaUrls: listing.media.map((item) => item.mediaUrl),
   createdAt: listing.createdAt,
   updatedAt: listing.updatedAt,
+  isDeleted: listing.isDeleted ?? false,
+  deletedAt: listing.deletedAt ?? null,
 });
 
 export const listingStore = {
@@ -187,16 +193,34 @@ export const listingStore = {
     return toRecord(saved);
   },
 
-  async findById(id: string): Promise<PropertyListingRecord | undefined> {
+  async findById(
+    id: string,
+    options?: { includeDeleted?: boolean },
+  ): Promise<PropertyListingRecord | undefined> {
     const listing = await prisma.propertyListing.findUnique({
       where: { id },
       include: { propertyType: true, media: true },
     });
-    return listing ? toRecord(listing) : undefined;
+    if (!listing) { return undefined; }
+    if (!options?.includeDeleted && (listing as { isDeleted?: boolean }).isDeleted) {
+      return undefined;
+    }
+    return toRecord(listing);
   },
 
   async remove(id: string): Promise<void> {
     await prisma.propertyListing.delete({ where: { id } });
+  },
+
+  async softDelete(id: string): Promise<PropertyListingRecord | undefined> {
+    const existing = await prisma.propertyListing.findUnique({ where: { id } });
+    if (!existing) { return undefined; }
+    const saved = await prisma.propertyListing.update({
+      where: { id },
+      data: { isDeleted: true, deletedAt: new Date() },
+      include: { propertyType: true, media: true },
+    });
+    return toRecord(saved);
   },
 
   async list(filters?: {
@@ -206,6 +230,7 @@ export const listingStore = {
     priceMin?: number;
     priceMax?: number;
     propertyType?: string;
+    includeDeleted?: boolean;
   }): Promise<PropertyListingRecord[]> {
     const listings = await prisma.propertyListing.findMany({
       where: {
@@ -214,6 +239,7 @@ export const listingStore = {
         location: filters?.locationContains ? { contains: filters.locationContains, mode: "insensitive" } : undefined,
         price: { gte: filters?.priceMin, lte: filters?.priceMax },
         propertyType: filters?.propertyType ? { name: { equals: filters.propertyType, mode: "insensitive" } } : undefined,
+        ...(filters?.includeDeleted ? {} : { isDeleted: false }),
       },
       include: { propertyType: true, media: true },
       orderBy: { createdAt: "desc" },

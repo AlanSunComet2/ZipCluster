@@ -1,5 +1,6 @@
 import { Navigate, createBrowserRouter } from "react-router-dom";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
+import { AccountSettingsPage } from "./pages/account/AccountSettingsPage";
 import { AdminDashboardPage } from "./pages/admin/AdminDashboardPage";
 import { AgentDashboardPage } from "./pages/agent/AgentDashboardPage";
 import { AgentDirectoryPage } from "./pages/user/AgentDirectoryPage";
@@ -43,6 +44,14 @@ export const router = createBrowserRouter([
     element: (
       <ProtectedRoute allowedRoles={["AGENT"]}>
         <AgentDashboardPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/account",
+    element: (
+      <ProtectedRoute allowedRoles={["USER", "AGENT", "ADMIN"]}>
+        <AccountSettingsPage />
       </ProtectedRoute>
     ),
   },
